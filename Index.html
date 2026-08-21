@@ -1352,9 +1352,13 @@ function syncVotingStationState() {
       // Clear all local locks for this booth tab instantly & reliably
       SessionStore.remove('local_voted_' + currentStationId);
       isVoteSubmitting = false;
-      lastKnownStationStatus = 'READY';
       
-      resetVotingUIForNewVoter();
+      // ONLY reset candidate selection if transitioning from VOTED -> READY (Panitia just clicked Lanjut Sesi)
+      if (lastKnownStationStatus === 'VOTED') {
+        resetVotingUIForNewVoter();
+      }
+
+      lastKnownStationStatus = 'READY';
       
       if (selectScreen) selectScreen.style.display = 'flex';
       if (waitingScreen) waitingScreen.style.display = 'none';
