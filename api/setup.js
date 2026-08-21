@@ -1,5 +1,5 @@
 const { getSupabase } = require('../lib/supabase');
-const { getGoogleSheets } = require('../lib/googleSheets');
+const { getGoogleSheets, getPrivateKeyPreview } = require('../lib/googleSheets');
 
 module.exports = async (req, res) => {
   const supabase = getSupabase();
@@ -67,6 +67,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
     success: true,
     supabaseConnected: !!supabase,
     googleSheets: sheetsStatus,
+    privateKeyPreview: getPrivateKeyPreview(process.env.GOOGLE_PRIVATE_KEY),
     sqlSetupInstructions: sqlSetup,
     envCheck: {
       hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
