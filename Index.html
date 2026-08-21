@@ -801,10 +801,7 @@ function _startDashPoll() {
 }
 function _stopDashPoll() { _dashPollRunning = false; }
 
-// Admin hasil: poll every 500ms (less critical)
-setInterval(function(){
-  if (currentView === 'admin' && currentTab === 'hasil') loadHasil(true);
-}, 500);
+// Real-time updates for Admin view are handled via Supabase WebSockets (no 500ms polling needed)
 
 
 
@@ -988,7 +985,12 @@ function loadOverview(){
     document.getElementById('ov-title').textContent = r.title;
     document.getElementById('ov-start').textContent = fmtDate(r.startTime);
     document.getElementById('ov-end').textContent = fmtDate(r.endTime);
-    document.getElementById('ov-title-input').value = r.title;
+    
+    var titleInput = document.getElementById('ov-title-input');
+    if (titleInput && document.activeElement !== titleInput) {
+      titleInput.value = r.title;
+    }
+
     var badge = document.getElementById('ov-status');
     badge.className = statusBadge(r.electionStatus);
     badge.innerHTML = '<span class="dot"></span> ' + statusLabel(r.electionStatus);
