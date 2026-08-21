@@ -43,15 +43,36 @@ CREATE TABLE IF NOT EXISTS settings (
 ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
   `.trim();
 
+  let sheetsStatus = { connected: false, message: 'Google Sheets credentials or SPREADSHEET_ID missing' };
+
+  if (sheets && process.env.SPREADSHEET_ID) {
+    try {
+      const spreadsheetId = process.env.SPREADSHEET_ID.trim().replace(/^"|"$/g, '');
+      const meta = await sheets.spreadsheets.get({ spreadsheetId });
+      sheetsStatus = {
+        connected: true,
+        title: meta.data.properties ? meta.data.properties.title : 'Connected',
+        sheetsCount: meta.data.sheets ? meta.data.sheets.length : 0
+      };
+    } catch (err) {
+      sheetsStatus = {
+        connected: false,
+        error: err.message,
+        hint: 'Pastikan file Google Sheets sudah dibagikan (Share) ke email Service Account sebagai Editor!'
+      };
+    }
+  }
+
   res.status(200).json({
     success: true,
     supabaseConnected: !!supabase,
-    googleSheetsConnected: !!sheets,
+    googleSheets: sheetsStatus,
     sqlSetupInstructions: sqlSetup,
-    env: {
-      supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-      googleEmail: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      spreadsheetId: !!process.env.SPREADSHEET_ID
+    envCheck: {
+      hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasGoogleEmail: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      hasGoogleKey: !!process.env.GOOGLE_PRIVATE_KEY,
+      hasSpreadsheetId: !!process.env.SPREADSHEET_ID
     }
   });
 };
