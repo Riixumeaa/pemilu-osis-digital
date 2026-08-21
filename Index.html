@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PEMILU OSIS DIGITAL</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Plus Jakarta Sans',sans-serif;-webkit-font-smoothing:antialiased;background:#F0F4F9;color:#0F172A}
+:root{
+  --blue:#1565C0;--blue-d:#0D47A1;--blue-l:#1E88E5;
+  --green:#059669;--red:#DC2626;--yellow:#D97706;
+  --bg:#F0F4F9;--surface:#fff;--surface2:#F8FAFC;--surface3:#EEF2F7;
+  --border:#E2E8F0;--text:#0F172A;--muted:#64748B;
+  --sh-sm:0 1px 3px rgba(0,0,0,.07);--sh:0 4px 16px rgba(0,0,0,.08);--sh-lg:0 8px 40px rgba(0,0,0,.12);--sh-xl:0 20px 60px rgba(0,0,0,.16);
+  --r:12px;--r-sm:6px;--r-xl:24px;--tr:all .2s cubic-bezier(.4,0,.2,1);
+}
+a{color:var(--blue);text-decoration:none}button,input,select,textarea{font-family:inherit}img{max-width:100%;display:block}
+h1,h2,h3,h4{color:var(--text);font-weight:800}p{color:var(--muted);font-size:.875rem}
+
+/* ---- BUTTONS ---- */
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.65rem 1.25rem;border-radius:var(--r-sm);font-size:.875rem;font-weight:600;cursor:pointer;transition:var(--tr);border:none;white-space:nowrap;text-decoration:none;justify-content:center}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(21,101,192,.3)}.btn-primary:hover:not(:disabled){background:var(--blue-d);transform:translateY(-1px)}
+.btn-success{background:var(--green);color:#fff}.btn-success:hover:not(:disabled){background:#047857}
+.btn-warning{background:var(--yellow);color:#fff}.btn-warning:hover:not(:disabled){background:#B45309}
+.btn-error{background:var(--red);color:#fff}.btn-error:hover:not(:disabled){background:#B91C1C}
+.btn-ghost{background:var(--surface3);color:var(--text);border:1px solid var(--border)}.btn-ghost:hover:not(:disabled){background:var(--border)}
+.btn-sm{padding:.35rem .75rem;font-size:.78rem;border-radius:5px}.btn-lg{padding:.85rem 1.75rem;font-size:1rem;border-radius:var(--r)}.btn-block{width:100%}
+
+/* ---- CARDS & FORMS ---- */
+.card{background:var(--surface);border-radius:var(--r);box-shadow:var(--sh-sm);border:1px solid var(--border);padding:1.5rem}
+.card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid var(--border)}
+.card-title{font-size:.82rem;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.05em}
+.fg{margin-bottom:1.25rem}.flabel{display:block;font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:.4rem}
+.finput,.fselect{width:100%;padding:.65rem .875rem;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.9rem;color:var(--text);background:var(--surface);outline:none;transition:var(--tr)}
+.finput:focus,.fselect:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(21,101,192,.12)}
+.fhint{font-size:.78rem;color:var(--muted);margin-top:.3rem}.frow{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+
+/* ---- BADGES & STATS ---- */
+.stat-card{background:var(--surface);border-radius:var(--r);border:1px solid var(--border);padding:1.25rem 1.5rem;box-shadow:var(--sh-sm)}
+.stat-val{font-size:2.25rem;font-weight:800;background:linear-gradient(135deg,var(--blue),var(--blue-l));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1}
+.stat-lbl{font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:.25rem}
+.badge{display:inline-flex;align-items:center;gap:.3rem;padding:.28rem .7rem;border-radius:99px;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.badge-not_started{background:#F1F5F9;color:#475569}.badge-not_started .dot{background:#94A3B8}
+.badge-scheduled{background:#FEF9C3;color:#854D0E}.badge-scheduled .dot{background:#CA8A04}
+.badge-running{background:#DCFCE7;color:#15803D}.badge-running .dot{background:#16A34A;animation:blink 1.5s infinite}
+.badge-finished{background:#F3E8FF;color:#7E22CE}.badge-finished .dot{background:#9333EA}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ---- SPA VIEWS & LAYOUT ---- */
+.app-view{display:none;min-height:100vh;flex-direction:column}
+.app-view.active{display:flex!important}
+.topbar{background:linear-gradient(135deg,var(--blue-d),var(--blue));color:#fff;padding:0 1.5rem;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.15)}
+.tb-brand{display:flex;align-items:center;gap:.6rem;font-size:1rem;font-weight:800;color:#fff}
+.tb-badge{background:rgba(255,255,255,.2);padding:.2rem .6rem;border-radius:99px;font-size:.7rem;font-weight:700;color:#fff}
+.main-wrap{flex:1;padding:1.5rem;max-width:1100px;margin:0 auto;width:100%}
+.grid{display:grid;gap:1rem}.g2{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.flex{display:flex}.fxc{align-items:center}.fxb{justify-content:space-between}.gap-sm{gap:.5rem}.gap{gap:1rem}.wrap{flex-wrap:wrap}
+.tc{text-align:center}.mt1{margin-top:.5rem}.mt2{margin-top:1rem}.mt3{margin-top:1.5rem}.mb1{margin-bottom:.5rem}.mb2{margin-bottom:1rem}
+.fw7{font-weight:700}.tsm{font-size:.82rem}.cmuted{color:var(--muted)}.cerr{color:var(--red)}
+.divider{height:1px;background:var(--border);margin:1.25rem 0}.hidden{display:none!important}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---- TABS & LOGS ---- */
+.tabs{display:flex;gap:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:.35rem;margin-bottom:1.5rem;flex-wrap:wrap}
+.tab-btn{padding:.5rem 1rem;border-radius:8px;border:none;background:none;font-size:.82rem;font-weight:600;color:var(--muted);cursor:pointer;transition:var(--tr);white-space:nowrap}
+.tab-btn.active{background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(21,101,192,.3)}.tab-btn:hover:not(.active){background:var(--surface3)}
+.tab-content{display:none}.tab-content.active{display:block}
+.cand-card{display:flex;align-items:center;gap:1rem;padding:1rem;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);transition:var(--tr);margin-bottom:.75rem}
+.cand-card:hover{border-color:var(--blue-l);box-shadow:var(--sh)}
+.cand-num{font-size:1.5rem;font-weight:800;color:var(--blue);flex-shrink:0;min-width:2.5rem}
+.cand-info{flex:1;min-width:0}.cand-name{font-weight:700;font-size:.95rem}.cand-vice{font-size:.8rem;color:var(--muted);margin-top:.15rem}
+.cand-actions{display:flex;gap:.5rem;flex-shrink:0}
+.result-item{padding:1rem;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);margin-bottom:.75rem}
+.result-hdr{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.35rem}
+.result-name{font-weight:700;font-size:.95rem}.result-pct{font-size:1.25rem;font-weight:800;color:var(--blue)}
+.progress-wrap{background:var(--surface3);border-radius:99px;height:8px;overflow:hidden}
+.progress-bar{background:linear-gradient(90deg,var(--blue),var(--blue-l));height:8px;border-radius:99px;transition:width .6s ease}
+.log-entry{display:flex;gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.8rem}
+.log-time{color:var(--muted);flex-shrink:0;font-family:monospace;font-size:.75rem}.log-type{font-weight:700;padding:.1rem .4rem;border-radius:4px;font-size:.7rem;flex-shrink:0}.log-msg{color:var(--text);flex:1}
+.log-VOTE{background:#DCFCE7;color:#166534}.log-AUTH{background:#DBEAFE;color:#1D4ED8}.log-STATION{background:#FEF3C7;color:#92400E}.log-ELECTION{background:#F3E8FF;color:#7E22CE}.log-ERROR{background:#FEE2E2;color:#991B1B}.log-SETUP,.log-CANDIDATE{background:#F1F5F9;color:#475569}
+.empty{text-align:center;padding:3rem 2rem;color:var(--muted)}.empty-ico{font-size:3rem;margin-bottom:.75rem;opacity:.45}
+
+/* ---- MODAL & TOAST ---- */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);z-index:999;align-items:center;justify-content:center;padding:1rem}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:var(--r-xl);box-shadow:var(--sh-xl);padding:2rem;width:100%;max-width:520px;animation:modal-in .22s ease}
+.modal-lg{max-width:680px}@keyframes modal-in{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.modal-title{font-size:1.2rem;font-weight:800;color:var(--text);margin-bottom:.35rem}.modal-body{margin:1.25rem 0}.modal-footer{display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem}
+.photo-area{border:2px dashed var(--border);border-radius:var(--r);padding:2rem;text-align:center;cursor:pointer;transition:var(--tr)}
+.photo-area:hover,.photo-area.drag-over{border-color:var(--blue);background:rgba(21,101,192,.03)}
+.photo-ico{font-size:2.5rem;margin-bottom:.5rem;opacity:.5}.photo-prev{max-width:180px;max-height:180px;border-radius:var(--r);object-fit:cover;margin:.5rem auto;border:2px solid var(--border)}
+.alert-error{background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;padding:.875rem 1rem;border-radius:var(--r-sm);font-size:.875rem;margin-bottom:1rem}
+#toast-cnt{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem;pointer-events:none}
+.toast{display:flex;align-items:center;gap:.75rem;padding:.8rem 1.25rem;border-radius:var(--r);background:#1E293B;color:#fff;font-size:.85rem;font-weight:600;box-shadow:var(--sh-lg);max-width:380px;pointer-events:all;animation:toast-in .25s ease}
+@keyframes toast-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.toast-success{background:var(--green)}.toast-error{background:var(--red)}.toast-warning{background:var(--yellow)}.t-ico{font-size:1.1rem;flex-shrink:0}
+
+/* ---- HOME HERO & ROLE CARDS ---- */
+.hero-bg{background:linear-gradient(160deg,#0A1628,#0D47A1 50%,#1565C0);color:#fff;padding:4rem 2rem 5rem;text-align:center;position:relative;overflow:hidden}
+.hero-title{font-size:2.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:.5rem;color:#fff}
+.hero-sub{font-size:1.1rem;color:rgba(255,255,255,.8);max-width:600px;margin:0 auto 1.5rem}
+.role-card{background:var(--surface);border-radius:var(--r-xl);box-shadow:var(--sh);border:1px solid var(--border);padding:2rem;text-align:center;transition:var(--tr);cursor:pointer;display:flex;flex-direction:column;align-items:center}
+.role-card:hover{transform:translateY(-4px);box-shadow:var(--sh-lg);border-color:var(--blue-l)}
+.role-ico{font-size:3.5rem;margin-bottom:1rem}
+.role-title{font-size:1.25rem;font-weight:800;margin-bottom:.35rem}
+.role-desc{color:var(--muted);font-size:.875rem;margin-bottom:1.5rem;flex:1}
+
+/* ---- FLEX & AUTO-FIT VOTING CARDS ---- */
+.vote-grid-flex{display:flex;flex-wrap:wrap;gap:1.5rem;justify-content:center;margin:1.5rem 0}
+.vote-cand-card{background:var(--surface);border:3px solid var(--border);border-radius:var(--r-xl);padding:1.75rem 1.5rem;transition:var(--tr);cursor:pointer;position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;flex:1 1 280px;max-width:340px;min-width:260px;box-shadow:var(--sh-sm)}
+.vote-cand-card:hover{border-color:var(--blue);transform:translateY(-5px);box-shadow:var(--sh-lg)}
+.vote-cand-card.selected{border-color:var(--blue);background:rgba(21,101,192,.04);box-shadow:0 0 0 5px rgba(21,101,192,.2)}
+.vote-num-tag{position:absolute;top:1.25rem;left:1.25rem;background:var(--blue);color:#fff;font-weight:800;font-size:1.25rem;padding:.25rem .85rem;border-radius:var(--r-sm);box-shadow:0 2px 8px rgba(21,101,192,.3)}
+.vote-img{width:160px;height:160px;object-fit:cover;border-radius:var(--r);margin:1.25rem 0;border:3px solid var(--border);box-shadow:var(--sh-sm)}
+.vote-img-placeholder{width:160px;height:160px;border-radius:var(--r);margin:1.25rem 0;background:linear-gradient(135deg,#DBEAFE,#BFDBFE);display:flex;align-items:center;justify-content:center;font-size:4rem}
+
+/* ---- STATION CONTROL CARD ---- */
+.station-card{background:var(--surface);border-radius:var(--r-xl);padding:1.5rem;border:2px solid var(--border);box-shadow:var(--sh-sm);display:flex;flex-direction:column;align-items:center;text-align:center;transition:var(--tr)}
+.station-card.voted{border-color:var(--green);background:rgba(5,150,105,.05);box-shadow:0 0 0 4px rgba(5,150,105,.2);animation:pulse-green 1.5s infinite}
+@keyframes pulse-green{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}
+
+@media(max-width:640px){.g2,.g3,.g4{grid-template-columns:1fr}.frow{grid-template-columns:1fr}.main-wrap{padding:1rem}.hero-title{font-size:1.8rem}}
+</style>
+
+<script>
+window.onerror = function(msg, url, line) {
+  console.error("Global App Error:", msg, "line:", line);
+  var banner = document.getElementById('global-err-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'global-err-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#DC2626;color:#fff;padding:1rem;z-index:99999;font-family:sans-serif;font-weight:bold;font-size:14px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+    document.body.appendChild(banner);
+  }
+  banner.innerHTML = '⚠️ System Error: ' + msg + ' (Line ' + line + ')';
+};
+</script>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════
+     1. HOME VIEW
+     ════════════════════════════════════════════════════════════ -->
+<div id="view-home" class="app-view">
+  <div class="hero-bg">
+    <div style="max-width:800px;margin:0 auto">
+      <div style="font-size:3.5rem;margin-bottom:.5rem">🗳️</div>
+      <h1 class="hero-title">PEMILU OSIS DIGITAL</h1>
+      <p class="hero-sub">Sistem Pemilihan Ketua &amp; Wakil Ketua OSIS Berbasis Digital Real-Time</p>
+      <div id="home-status-badge" class="badge badge-not_started" style="padding:.4rem 1rem;font-size:.85rem"><span class="dot"></span> Memuat status...</div>
+    </div>
+  </div>
+
+  <div class="main-wrap" style="margin-top:-2.5rem;z-index:10;position:relative">
+    <div class="grid g3 mb2">
+      <!-- Role: Voting Station -->
+      <div class="role-card" onclick="openStationModal()">
+        <div class="role-ico">🗳️</div>
+        <div class="role-title">Voting Station</div>
+        <div class="role-desc">Buka bilik suara langsung untuk peserta pemilu.</div>
+        <button class="btn btn-primary btn-block">Buka Bilik Suara</button>
+      </div>
+
+      <!-- Role: Dashboard Panitia -->
+      <div class="role-card" onclick="navTo('dashboard')">
+        <div class="role-ico">📊</div>
+        <div class="role-title">Dashboard Panitia</div>
+        <div class="role-desc">Monitoring real-time, grafik Pie Chart &amp; kontrol lanjut sesi bilik suara.</div>
+        <button class="btn btn-primary btn-block">Masuk Dashboard</button>
+      </div>
+
+      <!-- Role: Admin Panel -->
+      <div class="role-card" onclick="navTo('admin')">
+        <div class="role-ico">🔐</div>
+        <div class="role-title">Admin Panel</div>
+        <div class="role-desc">Kelola kandidat, jadwal, serta kontrol utama sistem pemilu.</div>
+        <button class="btn btn-ghost btn-block">Masuk Admin</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     2. ADMIN VIEW
+     ════════════════════════════════════════════════════════════ -->
+<div id="view-admin" class="app-view">
+  <!-- ADMIN LOGIN -->
+  <div id="admin-login-screen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem;background:linear-gradient(160deg,#0A1628,#0D47A1 50%,#1565C0)">
+    <div class="card" style="width:100%;max-width:420px;padding:3rem 2.5rem;border-radius:var(--r-xl);box-shadow:var(--sh-xl)">
+      <div class="tc" style="font-size:3.5rem;margin-bottom:.75rem">🔐</div>
+      <h1 class="tc" style="font-size:1.5rem;font-weight:800;margin-bottom:.25rem">Admin Panel</h1>
+      <p class="tc c-muted text-sm mb2">PEMILU OSIS DIGITAL</p>
+      <div class="fg"><label class="flabel">Password Admin</label><input type="password" id="login-pw" class="finput" placeholder="Masukkan password..." autocomplete="off"></div>
+      <button class="btn btn-primary btn-block btn-lg" id="login-btn" onclick="doLogin()">🔐 Masuk</button>
+      <p class="tc tsm cmuted mt2"><a href="#" onclick="navTo('home');return false;">← Kembali ke Home</a></p>
+    </div>
+  </div>
+
+  <!-- ADMIN APP -->
+  <div id="admin-app-screen" style="display:none;flex-direction:column;min-height:100vh;background:var(--bg)">
+    <div class="topbar">
+      <div class="tb-brand"><span>🗳️</span><span>PEMILU OSIS DIGITAL</span><span class="tb-badge">Admin Panel</span></div>
+      <div class="flex fxc gap-sm">
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff" onclick="navTo('dashboard')">📊 Dashboard Panitia</button>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff" onclick="doLogout()">Keluar</button>
+      </div>
+    </div>
+    <div class="main-wrap">
+      <div class="tabs" style="margin-top:1.25rem">
+        <button class="tab-btn active" onclick="switchAdminTab('overview')">📊 Overview</button>
+        <button class="tab-btn" onclick="switchAdminTab('kandidat')">👥 Pasangan Calon</button>
+        <button class="tab-btn" onclick="switchAdminTab('jadwal')">📅 Jadwal</button>
+        <button class="tab-btn" onclick="switchAdminTab('kontrol')">⚡ Kontrol</button>
+        <button class="tab-btn" onclick="switchAdminTab('hasil')">📈 Hasil</button>
+        <button class="tab-btn" onclick="switchAdminTab('log')">📋 Log</button>
+      </div>
+
+      <!-- TAB: OVERVIEW -->
+      <div id="tab-overview" class="tab-content active">
+        <div class="sec-hdr"><h2>Overview Pemilu</h2><p>Status dan informasi umum sistem</p></div>
+        <div class="grid g4 mb2">
+          <div class="stat-card"><div class="stat-val" id="ov-votes">—</div><div class="stat-lbl">Total Suara</div></div>
+          <div class="stat-card"><div class="stat-val" id="ov-sessions">—</div><div class="stat-lbl">Total Station</div></div>
+          <div class="stat-card"><div class="stat-val" id="ov-cands">—</div><div class="stat-lbl">Pasangan Calon</div></div>
+          <div class="stat-card"><div id="ov-status" class="badge badge-not_started"><span class="dot"></span> —</div><div class="stat-lbl mt1">Status Pemilu</div></div>
+        </div>
+        <div class="grid g2">
+          <div class="card">
+            <div class="card-hdr"><span class="card-title">ℹ️ Informasi Pemilu</span><button class="btn btn-sm btn-ghost" onclick="loadOverview()">↻ Refresh</button></div>
+            <table style="width:100%;font-size:.875rem;border-collapse:collapse">
+              <tr><td style="padding:.5rem 0;color:var(--muted);width:40%">Judul Pemilu</td><td id="ov-title" style="font-weight:600">—</td></tr>
+              <tr><td style="padding:.5rem 0;color:var(--muted)">Waktu Mulai</td><td id="ov-start" style="font-weight:600">—</td></tr>
+              <tr><td style="padding:.5rem 0;color:var(--muted)">Waktu Selesai</td><td id="ov-end" style="font-weight:600">—</td></tr>
+            </table>
+            <div class="mt2"><label class="flabel">Edit Judul</label><div class="flex gap-sm"><input type="text" id="ov-title-input" class="finput" placeholder="Nama pemilu..."><button class="btn btn-primary" onclick="saveTitle()">Simpan</button></div></div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><span class="card-title">🔑 Akses Panitia</span></div>
+            <p class="tsm cmuted mb2">Akses cepat ke Dashboard Panitia tanpa hambatan token.</p>
+            <button class="btn btn-primary btn-block" onclick="navTo('dashboard')">📊 Buka Dashboard Panitia</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: KANDIDAT -->
+      <div id="tab-kandidat" class="tab-content">
+        <div class="sec-hdr flex fxc fxb">
+          <div><h2>Pasangan Calon</h2><p>Kelola daftar pasangan yang akan dipilih</p></div>
+          <button class="btn btn-primary" onclick="openAddModal()">+ Tambah Pasangan</button>
+        </div>
+        <div id="cand-list"><div class="empty"><div class="empty-ico">👥</div><p>Memuat data kandidat...</p></div></div>
+      </div>
+
+      <!-- TAB: JADWAL -->
+      <div id="tab-jadwal" class="tab-content">
+        <div class="sec-hdr"><h2>Jadwal Pemilu</h2><p>Atur waktu mulai dan berakhirnya pemilu</p></div>
+        <div class="card" style="max-width:500px">
+          <div class="fg"><label class="flabel">Waktu Mulai</label><input type="datetime-local" id="sched-start" class="finput"></div>
+          <div class="fg"><label class="flabel">Waktu Selesai</label><input type="datetime-local" id="sched-end" class="finput"></div>
+          <button class="btn btn-primary btn-block" id="sched-btn" onclick="saveSchedule()">💾 Simpan Jadwal</button>
+        </div>
+      </div>
+
+      <!-- TAB: KONTROL -->
+      <div id="tab-kontrol" class="tab-content">
+        <div class="sec-hdr"><h2>Kontrol Pemilu</h2><p>Mulai, hentikan, atau reset pemilu</p></div>
+        <div class="grid g3 mb2">
+          <div class="card tc"><div style="font-size:3rem;margin-bottom:1rem">🟢</div><h3 style="margin-bottom:.5rem">Mulai Pemilu</h3><p class="tsm mb2">Mengubah status ke RUNNING.</p><button class="btn btn-success btn-block btn-lg" id="start-btn" onclick="doStart()">▶ Mulai Pemilu</button></div>
+          <div class="card tc"><div style="font-size:3rem;margin-bottom:1rem">🔴</div><h3 style="margin-bottom:.5rem">Hentikan Pemilu</h3><p class="tsm mb2">Mengubah status ke FINISHED.</p><button class="btn btn-error btn-block btn-lg" id="stop-btn" onclick="doStop()">⏹ Hentikan</button></div>
+          <div class="card tc"><div style="font-size:3rem;margin-bottom:1rem">🔄</div><h3 style="margin-bottom:.5rem">Reset Pemilu</h3><p class="tsm mb2">Hapus semua suara &amp; status station.</p><button class="btn btn-warning btn-block btn-lg" onclick="confirmReset()">↺ Reset</button></div>
+        </div>
+        <div class="card"><div class="card-hdr"><span class="card-title">⚡ Status Saat Ini</span></div><div id="kontrol-status" class="cmuted">Memuat...</div></div>
+      </div>
+
+      <!-- TAB: HASIL -->
+      <div id="tab-hasil" class="tab-content">
+        <div class="sec-hdr flex fxc fxb">
+          <div><h2>Hasil Pemilu (Live Count 1s)</h2><p>Perolehan suara terupdate otomatis setiap 1 detik</p></div>
+          <div class="flex gap-sm"><button class="btn btn-ghost" onclick="loadHasil()">↻ Refresh</button><button class="btn btn-primary" onclick="exportPDF()">⬇ Export PDF (Pie Chart)</button></div>
+        </div>
+        <div class="card mb2"><div class="flex fxc fxb"><span class="card-title">📊 Total Suara</span><span id="hasil-total" class="stat-val" style="font-size:1.5rem">—</span></div></div>
+        <div class="card mb2" id="admin-pie-chart-container"><div class="empty"><p>Diagram suara...</p></div></div>
+        <div id="hasil-list"><div class="empty"><div class="empty-ico">📊</div><p>Memuat hasil...</p></div></div>
+      </div>
+
+      <!-- TAB: LOG -->
+      <div id="tab-log" class="tab-content">
+        <div class="sec-hdr flex fxc fxb">
+          <div><h2>Log Aktivitas</h2><p>100 aktivitas terbaru</p></div>
+          <button class="btn btn-ghost" onclick="loadLogs()">↻ Refresh</button>
+        </div>
+        <div class="card" style="max-height:600px;overflow-y:auto"><div id="log-list"><div class="empty"><div class="empty-ico">📋</div><p>Memuat log...</p></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     3. DASHBOARD VIEW (DYNAMIC MULTI-STATION CONTROL & RESET ALL)
+     ════════════════════════════════════════════════════════════ -->
+<div id="view-dashboard" class="app-view">
+  <div class="topbar">
+    <div class="tb-brand"><span>📊</span><span>DASHBOARD PANITIA</span></div>
+    <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff" onclick="navTo('home')">← Ke Home</button>
+  </div>
+  <div class="main-wrap">
+    <div class="sec-hdr flex fxc fxb mt2">
+      <div><h2>Monitoring Real-Time &amp; Kontrol Multi-Station (Auto Refresh 1s)</h2><p>Panel otomatis mendeteksi semua Bilik Suara (Station) yang dibuka.</p></div>
+      <div class="flex gap-sm">
+        <button class="btn btn-error btn-sm" onclick="confirmResetAllStations()">⛔ Tutup &amp; Reset Semua Bilik</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadDashStats()">↻ Refresh Manual</button>
+      </div>
+    </div>
+
+    <div class="grid g3 mb2">
+      <div class="stat-card"><div class="stat-val" id="dash-total-votes">—</div><div class="stat-lbl">Total Suara Masuk</div></div>
+      <div class="stat-card"><div id="dash-status-badge" class="badge badge-not_started"><span class="dot"></span> —</div><div class="stat-lbl mt1">Status Pemilu</div></div>
+      <div class="stat-card"><div class="stat-val" id="dash-leading">—</div><div class="stat-lbl">Pasangan Unggul</div></div>
+    </div>
+
+    <!-- DYNAMIC DEDICATED STATIONS CONTROL PANEL -->
+    <div class="card mb2">
+      <div class="card-hdr flex fxc fxb">
+        <span class="card-title">🗳️ Panel Kontrol Lanjut Sesi Bilik Suara (Real-Time)</span>
+      </div>
+      <div id="dash-stations-container" class="grid g3">
+        <div class="empty" style="grid-column:1/-1"><div class="empty-ico">🗳️</div><p>Belum ada Bilik Suara (Station) yang dibuka. Buka Bilik Suara dari Menu Utama untuk memunculkannya di sini.</p></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">🥧 Live Count Perolehan Suara</span></div>
+      <div id="dash-pie-chart" style="min-height:200px;display:flex;align-items:center;justify-content:center"><div class="empty"><p>Memuat diagram...</p></div></div>
+      <div class="divider"></div>
+      <div id="dash-breakdown"><div class="empty"><p>Memuat rincian...</p></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     4. VOTING VIEW (BILIK SUARA BULLETPROOF REAL-TIME FLOW)
+     ════════════════════════════════════════════════════════════ -->
+<div id="view-voting" class="app-view">
+  <!-- VOTING ACTIVE / SELECTION SCREEN -->
+  <div id="vote-select-screen" style="display:flex;flex-direction:column;min-height:100vh;background:var(--bg)">
+    <div class="topbar">
+      <div class="tb-brand"><span>🗳️</span><span>SURAT SUARA OSIS</span></div>
+      <span class="tb-badge" id="vote-station-tag">Station #1</span>
+    </div>
+    <div class="main-wrap">
+      <div class="sec-hdr tc mt2 mb3">
+        <h2>PILIH PASANGAN CALON KETUA &amp; WAKIL KETUA OSIS</h2>
+        <p>Klik pada kartu pasangan calon pilihan Anda, lalu tekan tombol Konfirmasi Suara.</p>
+      </div>
+
+      <div id="vote-cand-grid" class="vote-grid-flex">
+        <!-- Render Candidates dynamically -->
+      </div>
+
+      <div class="tc mb3">
+        <button id="vote-submit-btn" class="btn btn-success btn-lg" style="padding:1.1rem 3.5rem;font-size:1.2rem;border-radius:var(--r-xl);box-shadow:0 4px 16px rgba(5,150,105,.4)" disabled onclick="openVoteConfirmModal()">✔️ KONFIRMASI PILIHAN SAYA</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VOTING WAITING PANITIA SCREEN -->
+  <div id="vote-waiting-screen" style="display:none;min-height:100vh;align-items:center;justify-content:center;padding:2rem;background:linear-gradient(160deg,#059669,#047857);color:#fff;text-align:center">
+    <div style="max-width:550px">
+      <div style="font-size:5rem;margin-bottom:1rem">🔊</div>
+      <h1 style="font-size:2.25rem;font-weight:800;color:#fff;margin-bottom:.5rem">SUARA ANDA BERHASIL DICATAT!</h1>
+      <p style="color:rgba(255,255,255,.9);font-size:1.15rem;margin-bottom:2rem">Terima kasih telah memilih. Sesi Anda telah selesai, silakan keluar dari bilik suara.</p>
+      <div class="badge" style="background:rgba(255,255,255,.2);color:#fff;padding:.6rem 1.5rem;font-size:.95rem"><span class="dot" style="background:#fff"></span> Menunggu Panitia Membuka Sesi Berikutnya...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     MODALS & OVERLAYS
+     ════════════════════════════════════════════════════════════ -->
+
+<!-- Modal Station Selector -->
+<div id="station-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-title">🗳️ Pilih Nomor Bilik Suara (Station)</div>
+    <div class="modal-body">
+      <p class="tsm cmuted mb2">Pilih nomor bilik suara untuk perangkat ini.</p>
+      <div class="fg">
+        <label class="flabel">Nomor Station</label>
+        <select id="modal-station-select" class="fselect">
+          <option value="Station 1">Station #1 (Bilik 1)</option>
+          <option value="Station 2">Station #2 (Bilik 2)</option>
+          <option value="Station 3">Station #3 (Bilik 3)</option>
+          <option value="Station 4">Station #4 (Bilik 4)</option>
+          <option value="Station 5">Station #5 (Bilik 5)</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('station-modal')">Batal</button>
+      <button class="btn btn-primary" onclick="confirmStationSelect()">Buka Station</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Admin Add/Edit Candidate -->
+<div id="add-modal" class="modal-overlay">
+  <div class="modal modal-lg">
+    <div class="modal-title" id="add-modal-title">➕ Tambah Pasangan Calon</div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="frow">
+        <div class="fg"><label class="flabel">Nomor Pasangan *</label><input type="number" id="cand-number" class="finput" placeholder="1, 2, 3..." min="1" max="99"></div>
+        <div class="fg"></div>
+      </div>
+      <div class="frow">
+        <div class="fg"><label class="flabel">Nama Ketua *</label><input type="text" id="cand-chairman" class="finput" placeholder="Nama lengkap ketua"></div>
+        <div class="fg"><label class="flabel">Nama Wakil Ketua *</label><input type="text" id="cand-vice" class="finput" placeholder="Nama lengkap wakil ketua"></div>
+      </div>
+      <div class="fg">
+        <label class="flabel">Foto Pasangan</label>
+        <div class="photo-area" id="photo-area" onclick="document.getElementById('photo-input').click()" ondragover="handleDragOver(event)" ondrop="handleDrop(event)">
+          <div id="photo-placeholder"><div class="photo-ico">📷</div><p style="font-weight:600">Klik atau drag foto di sini</p><p class="tsm cmuted mt1">JPEG/PNG • Maks 10MB</p></div>
+          <img id="photo-preview" class="photo-prev hidden" alt="Preview">
+        </div>
+        <input type="file" id="photo-input" accept="image/*" style="display:none" onchange="handlePhotoSelect(event)">
+        <p id="photo-size-info" class="fhint"></p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('add-modal')">Batal</button>
+      <button class="btn btn-primary" id="save-cand-btn" onclick="saveCandidate()">💾 Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Reset Confirmation -->
+<div id="reset-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-title">⚠️ Konfirmasi Reset</div>
+    <div class="modal-body">
+      <div class="alert-error"><strong>Tindakan ini tidak dapat dibatalkan!</strong><br>Semua data suara dan status station dihapus. Kandidat tetap aman.</div>
+      <div class="fg mt2"><label class="flabel">Ketik RESET untuk konfirmasi</label><input type="text" id="reset-confirm-input" class="finput" placeholder="RESET"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('reset-modal')">Batal</button>
+      <button class="btn btn-error" id="do-reset-btn" onclick="doReset()">🔄 Ya, Reset</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Confirm Vote -->
+<div id="vote-confirm-modal" class="modal-overlay">
+  <div class="modal tc">
+    <div class="modal-title">❓ Yakin dengan Pilihan Anda?</div>
+    <div class="modal-body">
+      <p class="mb2">Anda akan memilih Pasangan Calon:</p>
+      <div style="background:var(--surface3);border-radius:var(--r);padding:1.5rem;margin-bottom:1rem;border:2px solid var(--blue)">
+        <div style="font-size:2.25rem;font-weight:800;color:var(--blue)" id="confirm-cand-num">Pasangan #1</div>
+        <div style="font-weight:700;font-size:1.2rem;margin-top:.35rem" id="confirm-cand-names">Chairman &amp; Vice</div>
+      </div>
+      <p class="tsm cmuted">Pilihan Anda bersifat rahasia dan tidak dapat diubah setelah dikonfirmasi.</p>
+    </div>
+    <div class="modal-footer" style="justify-content:center">
+      <button class="btn btn-ghost" onclick="closeModal('vote-confirm-modal')">Batal</button>
+      <button class="btn btn-success btn-lg" onclick="doSubmitVote()">✔️ Ya, Kirim Suara</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-cnt"></div>
+
+<!-- ════════════════════════════════════════════════════════════
+     GLOBAL UTILITIES & SCRIPTS
+     ════════════════════════════════════════════════════════════ -->
+<script>
+// ---- SAFE STORAGE WRAPPER (localStorage — shared across tabs, for global data only) ----
+var SafeStore = (function(){
+  var mem = {};
+  return {
+    get: function(k){ try { return localStorage.getItem(k); } catch(e){ return mem[k]||null; } },
+    set: function(k,v){ try { localStorage.setItem(k, v); } catch(e){ mem[k]=v; } },
+    remove: function(k){ try { localStorage.removeItem(k); } catch(e){ delete mem[k]; } }
+  };
+})();
+
+// ---- SESSION STORE (sessionStorage — ISOLATED PER TAB, for per-booth station data) ----
+// CRITICAL: Each voting booth tab MUST use sessionStorage so station_id is not shared!
+var SessionStore = (function(){
+  var mem = {};
+  return {
+    get: function(k){ try { return sessionStorage.getItem(k); } catch(e){ return mem[k]||null; } },
+    set: function(k,v){ try { sessionStorage.setItem(k, v); } catch(e){ mem[k]=v; } },
+    remove: function(k){ try { sessionStorage.removeItem(k); } catch(e){ delete mem[k]; } }
+  };
+})();
+
+// ---- TOAST NOTIFICATION ----
+var Toast = (function(){
+  var cnt = null;
+  function init(){if(!cnt){cnt=document.getElementById('toast-cnt');if(!cnt){cnt=document.createElement('div');cnt.id='toast-cnt';document.body.appendChild(cnt);}}}
+  function show(msg,cls,dur){
+    init();
+    var el=document.createElement('div');
+    el.className='toast '+(cls||'');
+    el.innerHTML='<span class="t-ico">'+(cls==='toast-success'?'✓':cls==='toast-error'?'✗':'⚠')+'</span><span>'+msg+'</span>';
+    cnt.appendChild(el);
+    setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},dur||3500);
+  }
+  return {
+    success: function(m){show(m,'toast-success',3500);},
+    error: function(m){show(m,'toast-error',5000);},
+    warning: function(m){show(m,'toast-warning',4000);}
+  };
+})();
+
+// ---- COPY TEXT HELPER ----
+function copyText(text, lbl) {
+  if (!text || text === '—') return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      Toast.success((lbl || 'Teks') + ' disalin!');
+    }).catch(function() { fallbackCopy(text, lbl); });
+  } else {
+    fallbackCopy(text, lbl);
+  }
+}
+function fallbackCopy(text, lbl) {
+  var el = document.createElement('textarea');
+  el.value = text;
+  el.style.position = 'fixed';
+  el.style.opacity = '0';
+  document.body.appendChild(el);
+  el.select();
+  try { document.execCommand('copy'); Toast.success((lbl || 'Teks') + ' disalin!'); } catch(e) {}
+  document.body.removeChild(el);
+}
+
+// ---- WEB AUDIO LOUD ALARM SOUND SYNTHESIS ----
+var SoundFX = (function() {
+  var ctx = null;
+  function getCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  return {
+    playAlarm: function() {
+      try {
+        var c = getCtx();
+        var freqs = [880, 1760, 880];
+        freqs.forEach(function(freq, idx) {
+          var osc = c.createOscillator();
+          var g = c.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(freq, c.currentTime + idx * 0.18);
+          g.gain.setValueAtTime(0.8, c.currentTime + idx * 0.18); // Max Volume!
+          g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + idx * 0.18 + 0.15);
+          osc.connect(g); g.connect(c.destination);
+          osc.start(c.currentTime + idx * 0.18);
+          osc.stop(c.currentTime + idx * 0.18 + 0.15);
+        });
+      } catch(e) {}
+    },
+    playBeep: function() {
+      try {
+        var c = getCtx();
+        var osc = c.createOscillator();
+        var g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, c.currentTime);
+        g.gain.setValueAtTime(0.3, c.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.15);
+        osc.connect(g); g.connect(c.destination);
+        osc.start(); osc.stop(c.currentTime + 0.15);
+      } catch(e) {}
+    }
+  };
+})();
+
+// ---- PURE SVG PIE / DONUT CHART GENERATOR ----
+function renderSvgPieChart(breakdown, totalVotes) {
+  if (!totalVotes || !breakdown || !breakdown.length) {
+    return '<div class="tc cmuted" style="padding:2rem">Belum ada data suara</div>';
+  }
+  var colors = ['#1565C0', '#059669', '#D97706', '#7E22CE', '#EC4899', '#06B6D4'];
+  var cumulativeAngle = 0;
+  var paths = [];
+  var legends = [];
+  
+  breakdown.forEach(function(item, idx) {
+    var color = colors[idx % colors.length];
+    var pct = item.percentage || 0;
+    var sliceAngle = (pct / 100) * 360;
+    
+    if (sliceAngle > 0) {
+      var startAngle = cumulativeAngle;
+      var endAngle = cumulativeAngle + sliceAngle;
+      cumulativeAngle = endAngle;
+      
+      var x1 = 100 + 80 * Math.cos(Math.PI * (startAngle - 90) / 180);
+      var y1 = 100 + 80 * Math.sin(Math.PI * (startAngle - 90) / 180);
+      var x2 = 100 + 80 * Math.cos(Math.PI * (endAngle - 90) / 180);
+      var y2 = 100 + 80 * Math.sin(Math.PI * (endAngle - 90) / 180);
+      var largeArc = sliceAngle > 180 ? 1 : 0;
+      
+      var d = 'M 100 100 L ' + x1 + ' ' + y1 + ' A 80 80 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2 + ' Z';
+      paths.push('<path d="' + d + '" fill="' + color + '" stroke="#ffffff" stroke-width="2"><title>Pasangan #' + item.number + ': ' + item.votes + ' suara (' + pct + '%)</title></path>');
+    }
+    
+    legends.push(
+      '<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;margin-bottom:0.4rem">'+
+      '<span style="width:14px;height:14px;border-radius:3px;background:' + color + '"></span>'+
+      '<span><b>Pasangan #' + item.number + '</b> (' + item.chairman + ' & ' + item.vice + '): <b>' + item.votes + ' suara (' + pct + '%)</b></span>'+
+      '</div>'
+    );
+  });
+  
+  var svg = '<svg viewBox="0 0 200 200" style="width:180px;height:180px;border-radius:50%">' + paths.join('') + '</svg>';
+  return '<div style="display:flex;align-items:center;gap:2rem;justify-content:center;flex-wrap:wrap;padding:1rem 0">' +
+    '<div>' + svg + '</div>' +
+    '<div>' + legends.join('') + '</div>' +
+    '</div>';
+}
+
+// ---- HYBRID GAS & VERCEL REST API RUNNER ----
+var _supabaseRealtimeInited = false;
+
+function gasRun(fn, args){
+  return new Promise(function(resolve, reject){
+    // 1. If running inside Google Apps Script iframe environment:
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      var runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(function(e){ reject(e && e.message ? e : { message: String(e) }); });
+      var a = args || [];
+      switch(a.length){
+        case 0: runner[fn](); break;
+        case 1: runner[fn](a[0]); break;
+        case 2: runner[fn](a[0],a[1]); break;
+        case 3: runner[fn](a[0],a[1],a[2]); break;
+        case 4: runner[fn](a[0],a[1],a[2],a[3]); break;
+        case 5: runner[fn](a[0],a[1],a[2],a[3],a[4]); break;
+        default: runner[fn](a[0],a[1],a[2],a[3],a[4],a[5]); break;
+      }
+      return;
+    }
+
+    // 2. If running on Vercel (or local Node dev server):
+    var a = args || [];
+    var headers = { 'Content-Type': 'application/json' };
+
+    var reqMap = {
+      'getElectionStatus': function() { return fetch('/api/status').then(r=>r.json()); },
+      'getStatistics': function() { return fetch('/api/stats').then(r=>r.json()); },
+      'getCandidates': function() { return fetch('/api/candidates').then(r=>r.json()); },
+      'registerStation': function() { return fetch('/api/stations?action=register&stationId=' + encodeURIComponent(a[0]||'Station 1')).then(r=>r.json()); },
+      'nextStationSession': function() { return fetch('/api/stations?action=next&stationId=' + encodeURIComponent(a[0]||'Station 1')).then(r=>r.json()); },
+      'deleteStation': function() { return fetch('/api/stations?action=delete&stationId=' + encodeURIComponent(a[0]||'Station 1')).then(r=>r.json()); },
+      'resetAllStations': function() { return fetch('/api/stations?action=resetAll').then(r=>r.json()); },
+      'castStationVote': function() {
+        return fetch('/api/vote', { method: 'POST', headers: headers, body: JSON.stringify({ stationId: a[0], candidateId: a[1] }) }).then(r=>r.json());
+      },
+      'adminLogin': function() {
+        return fetch('/api/auth', { method: 'POST', headers: headers, body: JSON.stringify({ password: a[0] }) }).then(r=>r.json());
+      },
+      'verifyAdminToken': function() {
+        return fetch('/api/auth?action=verify&token=' + encodeURIComponent(a[0])).then(r=>r.json());
+      },
+      'addCandidate': function() {
+        return fetch('/api/candidates', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'add', candidate: { number: a[1], chairman: a[2], vice: a[3], pairImageUrl: a[4] } }) }).then(r=>r.json());
+      },
+      'updateCandidate': function() {
+        return fetch('/api/candidates', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'update', candidate: { id: a[1], number: a[2], chairman: a[3], vice: a[4], pairImageUrl: a[5] } }) }).then(r=>r.json());
+      },
+      'deleteCandidate': function() {
+        return fetch('/api/candidates', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'delete', candidate: { id: a[1] } }) }).then(r=>r.json());
+      },
+      'getAdminDashboardData': function() { return fetch('/api/stats?type=admin').then(r=>r.json()); },
+      'getLogs': function() { return fetch('/api/stats?type=logs').then(r=>r.json()); },
+      'toggleCandidate': function() {
+        return fetch('/api/candidates', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'toggle', candidate: { id: a[1], active: a[2] } }) }).then(r=>r.json());
+      },
+      'uploadPhoto': function() {
+        return fetch('/api/candidates', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'uploadPhoto', base64Data: a[0], mimeType: a[1], candNum: a[2] }) }).then(r=>r.json());
+      },
+      'scheduleElection': function() {
+        return fetch('/api/status', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'schedule', startTime: a[1], endTime: a[2] }) }).then(r=>r.json());
+      },
+      'startElection': function() {
+        return fetch('/api/status', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'setStatus', value: 'RUNNING' }) }).then(r=>r.json());
+      },
+      'stopElection': function() {
+        return fetch('/api/status', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'setStatus', value: 'FINISHED' }) }).then(r=>r.json());
+      },
+      'resetElection': function() {
+        return fetch('/api/status', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'resetAll' }) }).then(r=>r.json());
+      },
+      'setElectionTitle': function() {
+        return fetch('/api/status', { method: 'POST', headers: headers, body: JSON.stringify({ action: 'setTitle', title: a[1] }) }).then(r=>r.json());
+      }
+    };
+
+    if (reqMap[fn]) {
+      reqMap[fn]().then(resolve).catch(function(err){ reject(err && err.message ? err : { message: 'Vercel API Connection Error' }); });
+    } else {
+      reject({ message: 'Function ' + fn + ' not found in Vercel API router' });
+    }
+  });
+}
+
+function withBtn(btn, fn){
+  if(!btn||btn.disabled)return;
+  var orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  fn().then(function(){btn.disabled=false;btn.innerHTML=orig;}).catch(function(){btn.disabled=false;btn.innerHTML=orig;});
+}
+
+function openModal(id){var el=document.getElementById(id);if(el)el.classList.add('open');}
+function closeModal(id){var el=document.getElementById(id);if(el)el.classList.remove('open');}
+function fmtDate(iso){if(!iso)return'—';try{return new Date(iso).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return iso;}}
+function statusLabel(s){return{NOT_STARTED:'Belum Dimulai',SCHEDULED:'Terjadwal',RUNNING:'Sedang Berlangsung',FINISHED:'Selesai'}[s]||s;}
+function statusBadge(s){return'badge badge-'+((s||'NOT_STARTED').toLowerCase());}
+
+// ---- APP STATE & CONTROLLER ----
+var currentView = 'home';
+var currentTab = 'overview';
+var adminToken = null;
+var currentStationId = 'Station 1';
+var selectedCandidateId = null;
+var candidatesCache = [];
+var lastVoteCount = -1;
+var isVoteSubmitting = false; // CLIENT LOCK TO PREVENT FLICKER
+var photoData = null, photoMime = null;
+
+function navTo(targetView) {
+  // Stop active polls before switching view
+  _stopVotingPoll();
+  _stopDashPoll();
+  
+  currentView = targetView;
+  document.querySelectorAll('.app-view').forEach(function(v){v.classList.remove('active');});
+  var targetEl = document.getElementById('view-' + targetView);
+  if (targetEl) targetEl.classList.add('active');
+  
+  if (targetView === 'home') initHomeView();
+  if (targetView === 'admin') initAdminView();
+  if (targetView === 'dashboard') { initDashboardView(); _startDashPoll(); }
+  if (targetView === 'voting') { initVotingView(); _startVotingPoll(); }
+}
+
+// ---- CHAINED POLLING — FASTEST POSSIBLE FOR GAS ----
+// Each request fires the next IMMEDIATELY after receiving server response.
+// GAS takes ~500-1500ms per call, so "chain" = 0ms idle = maximum real-world speed.
+// Setting interval < GAS response time just stacks requests and makes things WORSE.
+
+var _votingPollRunning = false;
+function _startVotingPoll() {
+  if (_votingPollRunning) return;
+  _votingPollRunning = true;
+  (function votingLoop() {
+    if (!_votingPollRunning || currentView !== 'voting') {
+      _votingPollRunning = false;
+      return;
+    }
+    // syncVotingStationState returns the gasRun promise — chain next poll on settle
+    var p = syncVotingStationState();
+    var settled = function() { setTimeout(votingLoop, 50); }; // 50ms breathing room
+    if (p && typeof p.then === 'function') {
+      p.then(settled, settled);
+    } else {
+      settled();
+    }
+  })();
+}
+function _stopVotingPoll() { _votingPollRunning = false; }
+
+var _dashPollRunning = false;
+function _startDashPoll() {
+  if (_dashPollRunning) return;
+  _dashPollRunning = true;
+  (function dashLoop() {
+    if (!_dashPollRunning || currentView !== 'dashboard') {
+      _dashPollRunning = false;
+      return;
+    }
+    var p = loadDashStats(true);
+    var settled = function() { setTimeout(dashLoop, 150); }; // 150ms breathing room
+    if (p && typeof p.then === 'function') {
+      p.then(settled, settled);
+    } else {
+      settled();
+    }
+  })();
+}
+function _stopDashPoll() { _dashPollRunning = false; }
+
+// Admin hasil: poll every 500ms (less critical)
+setInterval(function(){
+  if (currentView === 'admin' && currentTab === 'hasil') loadHasil(true);
+}, 500);
+
+
+
+
+window.addEventListener('DOMContentLoaded', function(){
+  var urlParams = new URLSearchParams(window.location.search);
+  var target = urlParams.get('page') || 'home';
+  navTo(target);
+});
+
+// ---- HOME VIEW ----
+function initHomeView(){
+  gasRun('getElectionStatus',[]).then(function(r){
+    if(!r)return;
+    var el = document.getElementById('home-status-badge');
+    el.className = statusBadge(r.status);
+    el.innerHTML = '<span class="dot"></span> ' + statusLabel(r.status);
+  }).catch(function(){});
+}
+
+function openStationModal(){ openModal('station-modal'); }
+function confirmStationSelect(){
+  var st = document.getElementById('modal-station-select').value;
+  currentStationId = st;
+  // CRITICAL: Use sessionStorage (per-tab) so each booth tab is ISOLATED
+  SessionStore.set('station_id', st);
+  // Also clear any leftover voted lock from previous session on this tab
+  SessionStore.remove('local_voted_' + st);
+  isVoteSubmitting = false;
+  closeModal('station-modal');
+  navTo('voting');
+}
+
+// ---- ADMIN VIEW ----
+function initAdminView(){
+  var saved = SafeStore.get('admin_token');
+  if (saved) {
+    adminToken = saved;
+    gasRun('verifyAdminToken',[saved]).then(function(r){
+      if(r&&r.valid) showAdminApp();
+      else showAdminLogin();
+    }).catch(function(){ showAdminLogin(); });
+  } else {
+    showAdminLogin();
+  }
+}
+
+function showAdminLogin(){
+  document.getElementById('admin-login-screen').style.display='flex';
+  document.getElementById('admin-app-screen').style.display='none';
+}
+function showAdminApp(){
+  document.getElementById('admin-login-screen').style.display='none';
+  document.getElementById('admin-app-screen').style.display='flex';
+  loadOverview();
+  loadCandidates();
+}
+
+function doLogin(){
+  var pw = document.getElementById('login-pw').value;
+  var btn = document.getElementById('login-btn');
+  if(!pw){Toast.error('Masukkan password.');return;}
+  withBtn(btn, function(){
+    return gasRun('adminLogin',[pw]).then(function(r){
+      if(r&&r.success){
+        adminToken = r.token;
+        SafeStore.set('admin_token', adminToken);
+        showAdminApp();
+        Toast.success('Login Admin berhasil!');
+      } else Toast.error(r?r.message:'Login gagal.');
+    }).catch(function(e){Toast.error(e.message||'Gagal login');});
+  });
+}
+
+function doLogout(){
+  if(!confirm('Keluar dari Admin Panel?'))return;
+  SafeStore.remove('admin_token');
+  adminToken = null;
+  showAdminLogin();
+}
+
+function switchAdminTab(name){
+  currentTab = name;
+  var names=['overview','kandidat','jadwal','kontrol','hasil','log'];
+  document.querySelectorAll('.tab-btn').forEach(function(b,i){b.classList.toggle('active',names[i]===name);});
+  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+  var el=document.getElementById('tab-'+name);if(el)el.classList.add('active');
+  if(name==='hasil')loadHasil();
+  if(name==='log')loadLogs();
+  if(name==='kontrol')loadKontrolStatus();
+}
+
+function loadOverview(){
+  gasRun('getAdminDashboardData',[adminToken]).then(function(r){
+    if(!r||!r.success)return;
+    document.getElementById('ov-votes').textContent = r.totalVotes;
+    document.getElementById('ov-sessions').textContent = r.totalSessions;
+    document.getElementById('ov-cands').textContent = r.totalCandidates;
+    document.getElementById('ov-title').textContent = r.title;
+    document.getElementById('ov-start').textContent = fmtDate(r.startTime);
+    document.getElementById('ov-end').textContent = fmtDate(r.endTime);
+    document.getElementById('ov-title-input').value = r.title;
+    var badge = document.getElementById('ov-status');
+    badge.className = statusBadge(r.electionStatus);
+    badge.innerHTML = '<span class="dot"></span> ' + statusLabel(r.electionStatus);
+  }).catch(function(e){Toast.error('Gagal overview: '+(e.message||''));});
+}
+
+function saveTitle(){
+  var title = document.getElementById('ov-title-input').value.trim();
+  if(!title){Toast.error('Judul tidak boleh kosong.');return;}
+  gasRun('setElectionTitle',[adminToken,title]).then(function(r){
+    if(r&&r.success){Toast.success('Judul disimpan!');loadOverview();}
+    else Toast.error(r?r.message:'Gagal');
+  }).catch(function(e){Toast.error(e.message||'Gagal');});
+}
+
+function loadCandidates(){
+  gasRun('getCandidates',[]).then(function(r){
+    candidatesCache = r&&r.candidates?r.candidates:[];
+    renderCandidates(candidatesCache);
+  }).catch(function(e){Toast.error('Gagal memuat kandidat: '+(e.message||''));});
+}
+
+function renderCandidates(list){
+  var el = document.getElementById('cand-list');
+  if(!list||!list.length){
+    el.innerHTML='<div class="empty"><div class="empty-ico">👥</div><p>Belum ada pasangan calon.</p></div>';
+    return;
+  }
+  el.innerHTML=list.map(function(c){
+    var thumb=c.pairImageUrl
+      ?'<img src="'+c.pairImageUrl+'" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0" alt="Foto">'
+      :'<div style="width:64px;height:64px;border-radius:8px;background:linear-gradient(135deg,#DBEAFE,#BFDBFE);display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0">👤</div>';
+    var safeId = String(c.id).replace(/'/g, "\\'");
+    return '<div class="cand-card">'+thumb+
+      '<div class="cand-num">'+String(c.number).padStart(2,'0')+'</div>'+
+      '<div class="cand-info"><div class="cand-name">'+c.chairman+'</div><div class="cand-vice">Wakil: '+c.vice+'</div></div>'+
+      '<div class="cand-actions">'+
+        '<button class="btn btn-sm btn-ghost" onclick="openEditModal(\''+safeId+'\')">✏️ Edit</button>'+
+        '<button class="btn btn-sm '+(c.active?'btn-warning':'btn-success')+'" onclick="toggleCand(\''+safeId+'\','+(!c.active)+')">'+(c.active?'Nonaktifkan':'Aktifkan')+'</button>'+
+        '<button class="btn btn-sm btn-error" onclick="delCand(\''+safeId+'\')">🗑</button>'+
+      '</div></div>';
+  }).join('');
+}
+
+function openAddModal(){document.getElementById('add-modal-title').textContent='➕ Tambah Pasangan Calon';['edit-id','cand-number','cand-chairman','cand-vice'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('photo-placeholder').classList.remove('hidden');document.getElementById('photo-preview').classList.add('hidden');photoData=null;photoMime=null;openModal('add-modal');}
+function openEditModal(id){var c=candidatesCache.find(function(x){return String(x.id)===String(id);});if(!c)return;document.getElementById('add-modal-title').textContent='✏️ Edit Pasangan Calon';document.getElementById('edit-id').value=c.id;document.getElementById('cand-number').value=c.number;document.getElementById('cand-chairman').value=c.chairman;document.getElementById('cand-vice').value=c.vice;openModal('add-modal');}
+
+function handleDragOver(e){e.preventDefault();document.getElementById('photo-area').classList.add('drag-over');}
+function handleDrop(e){e.preventDefault();if(e.dataTransfer.files[0])processPhoto(e.dataTransfer.files[0]);}
+function handlePhotoSelect(e){if(e.target.files[0])processPhoto(e.target.files[0]);}
+function processPhoto(file){
+  if(!file.type.startsWith('image/')){Toast.error('Harus gambar.');return;}
+  var reader = new FileReader();
+  reader.onload=function(ev){
+    photoData=ev.target.result;photoMime=file.type;
+    document.getElementById('photo-preview').src=ev.target.result;
+    document.getElementById('photo-preview').classList.remove('hidden');
+    document.getElementById('photo-placeholder').classList.add('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveCandidate(){
+  var id=document.getElementById('edit-id').value;
+  var num=parseInt(document.getElementById('cand-number').value)||0;
+  var ch=document.getElementById('cand-chairman').value.trim();
+  var vi=document.getElementById('cand-vice').value.trim();
+  if(!num||!ch||!vi){Toast.error('Lengkapi semua field bertanda *');return;}
+  var btn=document.getElementById('save-cand-btn');
+  withBtn(btn, function(){
+    function doSave(imgUrl){
+      var fn = id ? 'updateCandidate' : 'addCandidate';
+      var args = id ? [adminToken,id,num,ch,vi,imgUrl||null] : [adminToken,num,ch,vi,imgUrl||null];
+      return gasRun(fn, args).then(function(r){
+        if(r&&r.success){Toast.success('Kandidat disimpan!');closeModal('add-modal');loadCandidates();}
+        else Toast.error(r?r.message:'Gagal');
+      });
+    }
+    if(photoData){
+      return gasRun('uploadPhoto',[photoData,photoMime,num]).then(function(r){
+        if(r&&r.success) return doSave(r.url);
+        else return doSave(null);
+      });
+    } else return doSave(null);
+  });
+}
+
+function toggleCand(id,active){
+  gasRun('toggleCandidate',[adminToken,id,active]).then(function(r){
+    if(r&&r.success){Toast.success('Status diperbarui');loadCandidates();}
+  });
+}
+function delCand(id){
+  if(!confirm('Hapus pasangan ini?'))return;
+  gasRun('deleteCandidate',[adminToken,id]).then(function(r){
+    if(r&&r.success){Toast.success('Pasangan dihapus');loadCandidates();}
+  });
+}
+
+function saveSchedule(){
+  var start=document.getElementById('sched-start').value;
+  var end=document.getElementById('sched-end').value;
+  if(!start||!end){Toast.error('Waktu mulai dan selesai harus diisi.');return;}
+  withBtn(document.getElementById('sched-btn'), function(){
+    return gasRun('scheduleElection',[adminToken,new Date(start).toISOString(),new Date(end).toISOString()]).then(function(r){
+      if(r&&r.success){Toast.success(r.message);loadOverview();}
+      else Toast.error(r?r.message:'Gagal');
+    });
+  });
+}
+
+function loadKontrolStatus(){
+  gasRun('getElectionStatus',[]).then(function(r){
+    if(!r)return;
+    document.getElementById('kontrol-status').innerHTML='<span class="'+statusBadge(r.status)+'"><span class="dot"></span>'+statusLabel(r.status)+'</span>';
+  });
+}
+function doStart(){gasRun('startElection',[adminToken]).then(function(r){Toast.success(r.message);loadKontrolStatus();loadOverview();});}
+function doStop(){gasRun('stopElection',[adminToken]).then(function(r){Toast.success(r.message);loadKontrolStatus();loadOverview();});}
+function confirmReset(){openModal('reset-modal');}
+function doReset(){
+  if(document.getElementById('reset-confirm-input').value.trim()!=='RESET'){Toast.error('Ketik RESET');return;}
+  gasRun('resetElection',[adminToken]).then(function(r){Toast.success(r.message);closeModal('reset-modal');loadKontrolStatus();loadOverview();});
+}
+
+function loadHasil(isAuto){
+  gasRun('getStatistics',[]).then(function(r){
+    if(!r||!r.success)return;
+    document.getElementById('hasil-total').textContent = r.totalVotes;
+    
+    var pieContainer = document.getElementById('admin-pie-chart-container');
+    if (pieContainer) pieContainer.innerHTML = renderSvgPieChart(r.breakdown, r.totalVotes);
+    
+    var el = document.getElementById('hasil-list');
+    if(!r.breakdown||!r.breakdown.length){el.innerHTML='<div class="empty"><p>Belum ada suara.</p></div>';return;}
+    el.innerHTML = r.breakdown.map(function(b){
+      return '<div class="result-item"><div class="result-hdr"><div class="result-name">Pasangan #'+b.number+' — '+b.chairman+' & '+b.vice+'</div><div class="result-pct">'+b.percentage+'%</div></div><div class="tsm cmuted mb1">'+b.votes+' suara</div><div class="progress-wrap"><div class="progress-bar" style="width:'+b.percentage+'%"></div></div></div>';
+    }).join('');
+  });
+}
+
+function exportPDF(){
+  gasRun('getStatistics',[]).then(function(r){
+    if(!r||!r.success)return;
+    var title = document.getElementById('ov-title-input').value || 'PEMILU OSIS DIGITAL';
+    var now = new Date().toLocaleString('id-ID');
+    var pieHtml = renderSvgPieChart(r.breakdown, r.totalVotes);
+    
+    var html = '<!DOCTYPE html><html><head><title>Laporan Hasil Pemilu</title><style>body{font-family:sans-serif;padding:40px;max-width:700px;margin:0 auto}h1{text-align:center;color:#1565C0;margin-bottom:4px}.sub{text-align:center;color:#666;margin-bottom:20px}.card{border:1px solid #ddd;border-radius:12px;padding:20px;margin-bottom:20px;text-align:center}.stat{font-size:32px;font-weight:800;color:#1565C0}</style></head><body>'+
+      '<h1>' + title + '</h1>'+
+      '<p class="sub">Laporan Resmi Perolehan Suara Pemilihan Ketua &amp; Wakil Ketua OSIS</p>'+
+      '<div class="card"><div>Total Suara Masuk</div><div class="stat">' + r.totalVotes + ' Suara</div></div>'+
+      '<div style="text-align:center;margin:30px 0"><h3>Diagram Perolehan Suara (Pie Chart)</h3>' + pieHtml + '</div>'+
+      '<div style="margin-top:40px;border-top:1px solid #eee;padding-top:15px;text-align:center;font-size:12px;color:#888">Dicetak pada: ' + now + '</div>'+
+      '</body></html>';
+      
+    var win = window.open('','_blank');
+    if(win){win.document.write(html);win.print();}
+  });
+}
+
+function loadLogs(){
+  gasRun('getLogs',[adminToken]).then(function(r){
+    if(!r||!r.success)return;
+    var el=document.getElementById('log-list');
+    if(!r.logs||!r.logs.length){el.innerHTML='<div class="empty"><p>Belum ada log.</p></div>';return;}
+    el.innerHTML=r.logs.map(function(l){
+      return '<div class="log-entry"><span class="log-time">'+(l.timestamp?new Date(l.timestamp).toLocaleTimeString('id-ID'):'—')+'</span><span class="log-type log-'+l.type+'">'+l.type+'</span><span class="log-msg">'+l.message+'</span></div>';
+    }).join('');
+  });
+}
+
+// ---- DASHBOARD CONTROLLER (DYNAMIC MULTI-STATION PANEL) ----
+function initDashboardView(){
+  loadDashStats();
+}
+
+function loadDashStats(isAuto){
+  return gasRun('getStatistics',[]).then(function(r){
+    if(!r||!r.success)return;
+    
+    document.getElementById('dash-total-votes').textContent = r.totalVotes;
+    var b = document.getElementById('dash-status-badge');
+    b.className = statusBadge(r.electionStatus);
+    b.innerHTML = '<span class="dot"></span> ' + statusLabel(r.electionStatus);
+    
+    var leading = '—';
+    if(r.breakdown && r.breakdown.length) {
+      var sorted = r.breakdown.slice().sort(function(x,y){return y.votes - x.votes;});
+      if (sorted[0].votes > 0) leading = 'Pasangan #' + sorted[0].number;
+    }
+    document.getElementById('dash-leading').textContent = leading;
+    
+    // Render Live Donut/Pie Chart
+    var pieEl = document.getElementById('dash-pie-chart');
+    if (pieEl) pieEl.innerHTML = renderSvgPieChart(r.breakdown, r.totalVotes);
+    
+    var el = document.getElementById('dash-breakdown');
+    el.innerHTML = r.breakdown.map(function(item){
+      return '<div class="result-item"><div class="result-hdr"><div class="result-name">Pasangan #'+item.number+' — '+item.chairman+' & '+item.vice+'</div><div class="result-pct">'+item.percentage+'%</div></div><div class="tsm cmuted mb1">'+item.votes+' suara</div><div class="progress-wrap"><div class="progress-bar" style="width:'+item.percentage+'%"></div></div></div>';
+    }).join('');
+
+    renderDynamicStations(r.stations);
+  });
+}
+
+function renderDynamicStations(stations) {
+  var container = document.getElementById('dash-stations-container');
+  if (!stations || !stations.length) {
+    container.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="empty-ico">🗳️</div><p>Belum ada Bilik Suara (Station) yang dibuka. Buka Bilik Suara dari Menu Utama untuk memunculkannya di sini.</p></div>';
+    return;
+  }
+  
+  stations.forEach(function(st) {
+    if (st.status === 'VOTED') {
+      var prevSt = SafeStore.get('st_state_' + st.stationId);
+      if (prevSt !== 'VOTED') {
+        SoundFX.playAlarm(); // LOUDER ALARM SOUND!
+        Toast.warning('🔊 ' + st.stationId + ' SELESAI MEMILIH! Tekan Lanjut Sesi.');
+      }
+    }
+    SafeStore.set('st_state_' + st.stationId, st.status);
+  });
+  
+  container.innerHTML = stations.map(function(st) {
+    var isVoted = (st.status === 'VOTED');
+    var statusText = isVoted ? '🟢 SELESAI MEMILIH' : '⚪ SIAP MEMILIH';
+    var statusBgClass = isVoted ? 'voted' : '';
+    var safeStId = String(st.stationId).replace(/'/g, "\\'");
+    
+    return '<div class="station-card ' + statusBgClass + '">' +
+      '<div style="font-size:2.5rem;margin-bottom:.5rem">' + (isVoted ? '🔔' : '🗳️') + '</div>' +
+      '<h3 style="font-size:1.2rem;margin-bottom:.25rem">' + st.stationId + '</h3>' +
+      '<div class="badge ' + (isVoted ? 'badge-running' : 'badge-not_started') + '" style="margin-bottom:1rem"><span class="dot"></span> ' + statusText + '</div>' +
+      '<button class="btn ' + (isVoted ? 'btn-success btn-lg' : 'btn-ghost') + ' btn-block" style="margin-bottom:.5rem" onclick="doNextStationSession(\'' + safeStId + '\')">' +
+        (isVoted ? '▶ LANJUT SESI PEMILIH' : '↻ Reset Siap Memilih') +
+      '</button>' +
+      '<button class="btn btn-error btn-sm btn-block" onclick="doDeleteStation(\'' + safeStId + '\')" style="opacity:.8">🗑 Hapus Bilik</button>' +
+    '</div>';
+  }).join('');
+}
+
+function doNextStationSession(stationId) {
+  SoundFX.playBeep();
+  gasRun('nextStationSession', [stationId]).then(function(r) {
+    if (r && r.success) {
+      Toast.success(stationId + ' dilanjutkan!');
+      SafeStore.set('st_state_' + stationId, 'READY');
+      loadDashStats();
+    }
+  });
+}
+
+function doDeleteStation(stationId) {
+  if (!confirm('Hapus ' + stationId + ' dari panel panitia?')) return;
+  gasRun('deleteStation', [stationId]).then(function(r) {
+    if (r && r.success) {
+      Toast.success(stationId + ' berhasil dihapus!');
+      SafeStore.remove('st_state_' + stationId);
+      loadDashStats();
+    } else {
+      Toast.error((r && r.message) || 'Gagal menghapus bilik.');
+    }
+  });
+}
+
+function confirmResetAllStations() {
+  if (!confirm('Tutup & reset semua bilik suara (stations) yang aktif?')) return;
+  gasRun('resetAllStations', []).then(function(r) {
+    if (r && r.success) {
+      Toast.success('Semua bilik suara berhasil di-reset!');
+      loadDashStats();
+    }
+  });
+}
+
+// ---- VOTING CONTROLLER (BULLETPROOF & FLICKER-FREE FLOW) ----
+// Tracks last known server status so we detect VOTED→READY transition
+var lastKnownStationStatus = null;
+
+function initVotingView(){
+  // CRITICAL: Read station_id from sessionStorage (per-tab, isolated)
+  currentStationId = SessionStore.get('station_id') || 'Station 1';
+  document.getElementById('vote-station-tag').textContent = currentStationId;
+  
+  // Full reset on init
+  isVoteSubmitting = false;
+  lastKnownStationStatus = null;
+  resetVotingUIForNewVoter();
+  
+  // syncVotingStationState already calls registerStation internally.
+  // Do NOT call gasRun('registerStation') separately — that causes 2 concurrent
+  // requests which can create duplicate rows in the SESSIONS sheet.
+  syncVotingStationState();
+  loadVotingCandidates();
+}
+
+// Wipe all traces of the previous voter's selection (called on init & after Lanjut Sesi)
+function resetVotingUIForNewVoter() {
+  selectedCandidateId = null;
+  // Remove selected highlight from all candidate cards
+  document.querySelectorAll('.vote-cand-card').forEach(function(c) {
+    c.classList.remove('selected');
+  });
+  // Disable submit button
+  var btn = document.getElementById('vote-submit-btn');
+  if (btn) btn.disabled = true;
+}
+
+function syncVotingStationState() {
+  // CRITICAL: Always read from sessionStorage (per-tab) — NEVER localStorage
+  currentStationId = SessionStore.get('station_id') || 'Station 1';
+  
+  var localVoted = SessionStore.get('local_voted_' + currentStationId) === 'true';
+  var selectScreen = document.getElementById('vote-select-screen');
+  var waitingScreen = document.getElementById('vote-waiting-screen');
+  
+  // ── STEP 1: Immediately enforce correct screen (zero visual gap) ──
+  // If we locally know the user voted, show waiting screen NOW before server replies.
+  if (isVoteSubmitting || localVoted) {
+    if (selectScreen) selectScreen.style.display = 'none';
+    if (waitingScreen) waitingScreen.style.display = 'flex';
+  }
+  
+  // ── STEP 2: Poll server — always, to detect Lanjut Sesi. RETURN promise for chained polling. ──
+  return gasRun('registerStation', [currentStationId]).then(function(r) {
+    if (!r) return;
+    var status = r.status;
+    
+    if (status === 'VOTED') {
+      // Server confirms vote is recorded
+      lastKnownStationStatus = 'VOTED';
+      if (selectScreen) selectScreen.style.display = 'none';
+      if (waitingScreen) waitingScreen.style.display = 'flex';
+      
+    } else if (status === 'READY') {
+      
+      if (isVoteSubmitting || localVoted) {
+        // ── Race condition guard ──
+        // If we just submitted but lastKnownStationStatus is already 'VOTED',
+        // then panitia has genuinely clicked Lanjut Sesi — DO proceed to unlock.
+        // Only skip if we have NOT yet seen the server confirm VOTED
+        // (i.e., the 500ms window where castStationVote hasn't finished yet).
+        if (lastKnownStationStatus !== 'VOTED') {
+          // Still in submission window — server hasn't written VOTED yet
+          // Stay on waiting screen, don't reset UI.
+          return;
+        }
+        // lastKnownStationStatus === 'VOTED' → this is a real Lanjut Sesi
+      }
+      
+      if (lastKnownStationStatus === 'VOTED') {
+        // ── Genuine Lanjut Sesi: was VOTED, panitia reset to READY ──
+        // Clear all local locks for this booth tab
+        SessionStore.remove('local_voted_' + currentStationId);
+        isVoteSubmitting = false;
+        // Wipe previous voter's selection — next voter sees clean screen
+        resetVotingUIForNewVoter();
+        loadVotingCandidates();
+      }
+      
+      // Show selection screen
+      lastKnownStationStatus = 'READY';
+      if (selectScreen) selectScreen.style.display = 'flex';
+      if (waitingScreen) waitingScreen.style.display = 'none';
+    }
+  });
+}
+
+function loadVotingCandidates(){
+  gasRun('getCandidates',[]).then(function(r){
+    candidatesCache = r&&r.candidates?r.candidates:[];
+    var list = candidatesCache.filter(function(c){return c.active;});
+    var el = document.getElementById('vote-cand-grid');
+    if(!list.length){
+      el.innerHTML = '<div class="empty" style="width:100%"><p>Belum ada pasangan calon aktif.</p></div>';
+      return;
+    }
+    el.innerHTML = list.map(function(c){
+      var img = c.pairImageUrl ? '<img src="'+c.pairImageUrl+'" class="vote-img" alt="Foto">' : '<div class="vote-img-placeholder">👤</div>';
+      var safeId = String(c.id).replace(/'/g, "\\'");
+      return '<div class="vote-cand-card" id="vcand-'+c.id+'" onclick="selectVotingCandidate(\''+safeId+'\')">'+
+        '<div class="vote-num-tag">#'+String(c.number).padStart(2,'0')+'</div>'+
+        img+
+        '<h3 style="font-size:1.25rem;margin-bottom:.25rem;color:var(--text)">'+c.chairman+'</h3>'+
+        '<p class="tsm cmuted">Wakil: '+c.vice+'</p>'+
+      '</div>';
+    }).join('');
+  });
+}
+
+function selectVotingCandidate(id){
+  if (isVoteSubmitting) return; // Prevent selection if submitting
+  selectedCandidateId = id;
+  document.querySelectorAll('.vote-cand-card').forEach(function(c){c.classList.remove('selected');});
+  var card = document.getElementById('vcand-' + id);
+  if(card) card.classList.add('selected');
+  document.getElementById('vote-submit-btn').disabled = false;
+  SoundFX.playBeep();
+}
+
+function openVoteConfirmModal(){
+  if (isVoteSubmitting) return;
+  var c = candidatesCache.find(function(x){ return String(x.id) === String(selectedCandidateId); });
+  if(c){
+    document.getElementById('confirm-cand-num').textContent = 'Pasangan #' + String(c.number).padStart(2,'0');
+    document.getElementById('confirm-cand-names').textContent = c.chairman + ' & ' + c.vice;
+  }
+  openModal('vote-confirm-modal');
+}
+
+function doSubmitVote(){
+  if (isVoteSubmitting) return;
+  // CRITICAL: Read from sessionStorage (per-tab) to get THIS booth's station id
+  var st = SessionStore.get('station_id') || 'Station 1';
+  
+  // LOCK IMMEDIATELY — both in-memory and sessionStorage (per-tab, isolated)
+  isVoteSubmitting = true;
+  SessionStore.set('local_voted_' + st, 'true');
+  
+  // Play LOUD ALARM sound immediately
+  SoundFX.playAlarm();
+  
+  closeModal('vote-confirm-modal');
+  document.getElementById('vote-select-screen').style.display='none';
+  document.getElementById('vote-waiting-screen').style.display='flex';
+  
+  // Submit vote to server
+  gasRun('castStationVote', [st, selectedCandidateId]).then(function(r){
+    if(!r||!r.success) {
+      Toast.error(r ? r.message : 'Gagal mencatat suara');
+      // On failure, unlock so user can retry
+      isVoteSubmitting = false;
+      SessionStore.remove('local_voted_' + st);
+    }
+  }).catch(function(e){
+    Toast.error(e.message || 'Gagal submit suara');
+    // On error, unlock so user can retry
+    isVoteSubmitting = false;
+    SessionStore.remove('local_voted_' + st);
+  });
+}
+</script>
+</body>
+</html>
