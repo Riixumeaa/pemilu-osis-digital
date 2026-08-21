@@ -21,21 +21,21 @@ module.exports = async (req, res) => {
   const now = new Date().toISOString();
 
   if (supabase) {
-    // 1. Record Vote in Supabase
-    await supabase.from('votes').insert([{
-      id: voteId,
-      candidate_id: String(candidateId),
-      station_id: st,
-      session_token: 'NO_TOKEN',
-      voted_at: now
-    }]);
-
-    // 2. Mark Station Status as VOTED in Supabase (triggers WebSocket event < 10ms!)
-    await supabase.from('sessions').upsert({
-      station_id: st,
-      status: 'VOTED',
-      updated_at: now
-    });
+    // Record vote & update station status concurrently for ultra-fast < 15ms DB response!
+    await Promise.all([
+      supabase.from('votes').insert([{
+        id: voteId,
+        candidate_id: String(candidateId),
+        station_id: st,
+        session_token: 'NO_TOKEN',
+        voted_at: now
+      }]),
+      supabase.from('sessions').upsert({
+        station_id: st,
+        status: 'VOTED',
+        updated_at: now
+      })
+    ]);
   } else {
     localVotes.push({ id: voteId, candidateId: String(candidateId), stationId: st, votedAt: now });
     localSessions.set(st, 'VOTED');

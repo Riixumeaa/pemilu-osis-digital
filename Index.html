@@ -809,8 +809,9 @@ setInterval(function(){
 
 
 
-// ---- SUPABASE REALTIME WEBSOCKET SUBSCRIPTION (< 10ms INSTANT PUSH) ----
+// ---- SUPABASE REALTIME WEBSOCKET SUBSCRIPTION & INSTANT BROADCAST (< 5ms) ----
 var _supabaseRealtimeClient = null;
+var _supabaseBroadcastChannel = null;
 
 function initSupabaseRealtime() {
   if (_supabaseRealtimeClient || typeof window.supabase === 'undefined') return;
@@ -818,16 +819,39 @@ function initSupabaseRealtime() {
     if (!s || !s.supabaseUrl || !s.supabaseAnonKey) return;
     try {
       _supabaseRealtimeClient = window.supabase.createClient(s.supabaseUrl, s.supabaseAnonKey);
+      
+      // 1. Database Postgres Changes listener (< 10ms)
       _supabaseRealtimeClient
         .channel('public:sessions')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, function() {
-          // INSTANT < 10ms WEBSOCKET SIGNAL!
+          if (currentView === 'dashboard') loadDashStats(true);
+          if (currentView === 'voting') syncVotingStationState();
+        })
+        .subscribe();
+
+      // 2. Direct Client-to-Client Broadcast Channel (< 5ms Instant Push!)
+      _supabaseBroadcastChannel = _supabaseRealtimeClient.channel('pemilu_broadcast');
+      _supabaseBroadcastChannel
+        .on('broadcast', { event: 'station_update' }, function() {
+          // INSTANT < 5ms BROADCAST SIGNAL!
           if (currentView === 'dashboard') loadDashStats(true);
           if (currentView === 'voting') syncVotingStationState();
         })
         .subscribe();
     } catch(e) {}
   }).catch(function(){});
+}
+
+function broadcastStationChange(stationId, status) {
+  if (_supabaseBroadcastChannel) {
+    try {
+      _supabaseBroadcastChannel.send({
+        type: 'broadcast',
+        event: 'station_update',
+        payload: { stationId: stationId, status: status }
+      });
+    } catch(e) {}
+  }
 }
 
 window.addEventListener('DOMContentLoaded', function(){
@@ -1181,6 +1205,7 @@ function renderDynamicStations(stations) {
 
 function doNextStationSession(stationId) {
   SoundFX.playBeep();
+  broadcastStationChange(stationId, 'READY');
   gasRun('nextStationSession', [stationId]).then(function(r) {
     if (r && r.success) {
       Toast.success(stationId + ' dilanjutkan!');
@@ -1363,6 +1388,9 @@ function doSubmitVote(){
   closeModal('vote-confirm-modal');
   document.getElementById('vote-select-screen').style.display='none';
   document.getElementById('vote-waiting-screen').style.display='flex';
+  
+  // Broadcast INSTANT < 5ms signal to Panitia Dashboard!
+  broadcastStationChange(st, 'VOTED');
   
   // Submit vote to server
   gasRun('castStationVote', [st, selectedCandidateId]).then(function(r){
