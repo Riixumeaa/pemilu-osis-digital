@@ -811,8 +811,17 @@ var _supabaseRealtimeClient = null;
 var _supabaseBroadcastChannel = null;
 var stationsCache = [];
 
+var _pendingStationLocks = {}; // stationId -> { status, until }
+
 function updateStationStatusLocally(stationId, newStatus) {
   if (!stationId) return;
+
+  // Lock status locally for 3 seconds to prevent stale network poll revert
+  _pendingStationLocks[stationId] = {
+    status: newStatus,
+    until: Date.now() + 3000
+  };
+
   if (!stationsCache || !stationsCache.length) {
     if (newStatus !== 'DELETED') {
       stationsCache = [{ stationId: stationId, status: newStatus, updatedAt: new Date().toISOString() }];
@@ -1206,14 +1215,28 @@ function loadDashStats(isAuto){
 }
 
 function renderDynamicStations(stations) {
-  if (stations) stationsCache = stations;
+  if (stations) {
+    var now = Date.now();
+    stations.forEach(function(st) {
+      var lock = _pendingStationLocks[st.stationId];
+      if (lock) {
+        if (now < lock.until) {
+          // Respect active transition lock over stale server response
+          st.status = lock.status;
+        } else {
+          delete _pendingStationLocks[st.stationId];
+        }
+      }
+    });
+    stationsCache = stations;
+  }
   var container = document.getElementById('dash-stations-container');
-  if (!stations || !stations.length) {
+  if (!stationsCache || !stationsCache.length) {
     container.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="empty-ico">🗳️</div><p>Belum ada Bilik Suara (Station) yang dibuka. Buka Bilik Suara dari Menu Utama untuk memunculkannya di sini.</p></div>';
     return;
   }
   
-  stations.forEach(function(st) {
+  stationsCache.forEach(function(st) {
     if (st.status === 'VOTED') {
       var prevSt = SafeStore.get('st_state_' + st.stationId);
       if (prevSt !== 'VOTED') {
@@ -1224,7 +1247,7 @@ function renderDynamicStations(stations) {
     SafeStore.set('st_state_' + st.stationId, st.status);
   });
   
-  container.innerHTML = stations.map(function(st) {
+  container.innerHTML = stationsCache.map(function(st) {
     var isVoted = (st.status === 'VOTED');
     var statusText = isVoted ? '🟢 SELESAI MEMILIH' : '⚪ SIAP MEMILIH';
     var statusBgClass = isVoted ? 'voted' : '';
@@ -1244,25 +1267,29 @@ function renderDynamicStations(stations) {
 
 function doNextStationSession(stationId) {
   SoundFX.playBeep();
+  // 1. Lock state locally to READY for 3 seconds (100% flicker-free!)
+  updateStationStatusLocally(stationId, 'READY');
+  SafeStore.set('st_state_' + stationId, 'READY');
+
+  // 2. Broadcast instant WebSocket signal to booth
   broadcastStationChange(stationId, 'READY');
+
+  // 3. Execute server request
   gasRun('nextStationSession', [stationId]).then(function(r) {
     if (r && r.success) {
-      Toast.success(stationId + ' dilanjutkan!');
-      SafeStore.set('st_state_' + stationId, 'READY');
-      loadDashStats();
+      Toast.success(stationId + ' dilanjutkan ke pemilih berikutnya!');
     }
-  });
+  }).catch(function(){});
 }
 
 function doDeleteStation(stationId) {
   if (!confirm('Hapus ' + stationId + ' dari panel panitia?')) return;
+  updateStationStatusLocally(stationId, 'DELETED');
+  broadcastStationChange(stationId, 'DELETED');
   gasRun('deleteStation', [stationId]).then(function(r) {
     if (r && r.success) {
       Toast.success(stationId + ' berhasil dihapus!');
       SafeStore.remove('st_state_' + stationId);
-      loadDashStats();
-    } else {
-      Toast.error((r && r.message) || 'Gagal menghapus bilik.');
     }
   });
 }
@@ -1278,92 +1305,57 @@ function confirmResetAllStations() {
 }
 
 // ---- VOTING CONTROLLER (BULLETPROOF & FLICKER-FREE FLOW) ----
-// Tracks last known server status so we detect VOTED→READY transition
 var lastKnownStationStatus = null;
 
 function initVotingView(){
-  // CRITICAL: Read station_id from sessionStorage (per-tab, isolated)
   currentStationId = SessionStore.get('station_id') || 'Station 1';
   document.getElementById('vote-station-tag').textContent = currentStationId;
   
-  // Full reset on init
   isVoteSubmitting = false;
   lastKnownStationStatus = null;
   resetVotingUIForNewVoter();
   
-  // syncVotingStationState already calls registerStation internally.
-  // Do NOT call gasRun('registerStation') separately — that causes 2 concurrent
-  // requests which can create duplicate rows in the SESSIONS sheet.
   syncVotingStationState();
   loadVotingCandidates();
 }
 
-// Wipe all traces of the previous voter's selection (called on init & after Lanjut Sesi)
 function resetVotingUIForNewVoter() {
   selectedCandidateId = null;
-  // Remove selected highlight from all candidate cards
   document.querySelectorAll('.vote-cand-card').forEach(function(c) {
     c.classList.remove('selected');
   });
-  // Disable submit button
   var btn = document.getElementById('vote-submit-btn');
   if (btn) btn.disabled = true;
 }
 
 function syncVotingStationState() {
-  // CRITICAL: Always read from sessionStorage (per-tab) — NEVER localStorage
   currentStationId = SessionStore.get('station_id') || 'Station 1';
-  
   var localVoted = SessionStore.get('local_voted_' + currentStationId) === 'true';
   var selectScreen = document.getElementById('vote-select-screen');
   var waitingScreen = document.getElementById('vote-waiting-screen');
   
-  // ── STEP 1: Immediately enforce correct screen (zero visual gap) ──
-  // If we locally know the user voted, show waiting screen NOW before server replies.
   if (isVoteSubmitting || localVoted) {
     if (selectScreen) selectScreen.style.display = 'none';
     if (waitingScreen) waitingScreen.style.display = 'flex';
   }
   
-  // ── STEP 2: Poll server — always, to detect Lanjut Sesi. RETURN promise for chained polling. ──
   return gasRun('registerStation', [currentStationId]).then(function(r) {
     if (!r) return;
     var status = r.status;
     
     if (status === 'VOTED') {
-      // Server confirms vote is recorded
       lastKnownStationStatus = 'VOTED';
       if (selectScreen) selectScreen.style.display = 'none';
       if (waitingScreen) waitingScreen.style.display = 'flex';
       
     } else if (status === 'READY') {
-      
-      if (isVoteSubmitting || localVoted) {
-        // ── Race condition guard ──
-        // If we just submitted but lastKnownStationStatus is already 'VOTED',
-        // then panitia has genuinely clicked Lanjut Sesi — DO proceed to unlock.
-        // Only skip if we have NOT yet seen the server confirm VOTED
-        // (i.e., the 500ms window where castStationVote hasn't finished yet).
-        if (lastKnownStationStatus !== 'VOTED') {
-          // Still in submission window — server hasn't written VOTED yet
-          // Stay on waiting screen, don't reset UI.
-          return;
-        }
-        // lastKnownStationStatus === 'VOTED' → this is a real Lanjut Sesi
-      }
-      
-      if (lastKnownStationStatus === 'VOTED') {
-        // ── Genuine Lanjut Sesi: was VOTED, panitia reset to READY ──
-        // Clear all local locks for this booth tab
-        SessionStore.remove('local_voted_' + currentStationId);
-        isVoteSubmitting = false;
-        // Wipe previous voter's selection — next voter sees clean screen
-        resetVotingUIForNewVoter();
-        loadVotingCandidates();
-      }
-      
-      // Show selection screen
+      // Clear all local locks for this booth tab instantly & reliably
+      SessionStore.remove('local_voted_' + currentStationId);
+      isVoteSubmitting = false;
       lastKnownStationStatus = 'READY';
+      
+      resetVotingUIForNewVoter();
+      
       if (selectScreen) selectScreen.style.display = 'flex';
       if (waitingScreen) waitingScreen.style.display = 'none';
     }
