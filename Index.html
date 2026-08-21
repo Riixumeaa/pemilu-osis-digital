@@ -809,7 +809,29 @@ setInterval(function(){
 
 
 
+// ---- SUPABASE REALTIME WEBSOCKET SUBSCRIPTION (< 10ms INSTANT PUSH) ----
+var _supabaseRealtimeClient = null;
+
+function initSupabaseRealtime() {
+  if (_supabaseRealtimeClient || typeof window.supabase === 'undefined') return;
+  fetch('/api/setup').then(function(r) { return r.json(); }).then(function(s) {
+    if (!s || !s.supabaseUrl || !s.supabaseAnonKey) return;
+    try {
+      _supabaseRealtimeClient = window.supabase.createClient(s.supabaseUrl, s.supabaseAnonKey);
+      _supabaseRealtimeClient
+        .channel('public:sessions')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, function() {
+          // INSTANT < 10ms WEBSOCKET SIGNAL!
+          if (currentView === 'dashboard') loadDashStats(true);
+          if (currentView === 'voting') syncVotingStationState();
+        })
+        .subscribe();
+    } catch(e) {}
+  }).catch(function(){});
+}
+
 window.addEventListener('DOMContentLoaded', function(){
+  initSupabaseRealtime();
   var urlParams = new URLSearchParams(window.location.search);
   var target = urlParams.get('page') || 'home';
   navTo(target);
@@ -1049,8 +1071,12 @@ function loadHasil(isAuto){
 }
 
 function exportPDF(){
+  var win = window.open('', '_blank');
+  if (win) {
+    win.document.write('<!DOCTYPE html><html><head><title>Mencetak Laporan...</title></head><body style="font-family:sans-serif;text-align:center;padding:50px;"><h2>📄 Mempersiapkan Laporan Hasil Pemilu...</h2><p>Harap tunggu sebentar...</p></body></html>');
+  }
   gasRun('getStatistics',[]).then(function(r){
-    if(!r||!r.success)return;
+    if(!r||!r.success) { if(win) win.close(); return; }
     var title = document.getElementById('ov-title-input').value || 'PEMILU OSIS DIGITAL';
     var now = new Date().toLocaleString('id-ID');
     var pieHtml = renderSvgPieChart(r.breakdown, r.totalVotes);
@@ -1063,8 +1089,12 @@ function exportPDF(){
       '<div style="margin-top:40px;border-top:1px solid #eee;padding-top:15px;text-align:center;font-size:12px;color:#888">Dicetak pada: ' + now + '</div>'+
       '</body></html>';
       
-    var win = window.open('','_blank');
-    if(win){win.document.write(html);win.print();}
+    if(win){
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.print();
+    }
   });
 }
 

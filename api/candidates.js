@@ -1,4 +1,5 @@
 const { getSupabase } = require('../lib/supabase');
+const { syncCandidateToSheet } = require('../lib/googleSheets');
 
 // In-memory fallback if Supabase not configured yet
 let localCandidates = [
@@ -45,11 +46,17 @@ module.exports = async (req, res) => {
       };
 
       if (supabase) {
-        const { error } = await supabase.from('candidates').insert([newCand]);
+        const { data, error } = await supabase.from('candidates').insert([newCand]).select();
         if (error) return res.status(500).json({ success: false, message: error.message });
+        if (data && data[0]) newCand.id = data[0].id;
       } else {
-        localCandidates.push({ id: String(Date.now()), ...newCand });
+        newCand.id = String(Date.now());
+        localCandidates.push(newCand);
       }
+
+      // Sync candidate and photo to Google Sheets CANDIDATES sheet
+      syncCandidateToSheet(newCand).catch(() => {});
+
       return res.status(200).json({ success: true, message: 'Pasangan calon ditambahkan!' });
     }
 
@@ -65,6 +72,9 @@ module.exports = async (req, res) => {
           })
           .eq('id', candidate.id);
       }
+
+      syncCandidateToSheet(candidate).catch(() => {});
+
       return res.status(200).json({ success: true, message: 'Data kandidat diperbarui!' });
     }
 

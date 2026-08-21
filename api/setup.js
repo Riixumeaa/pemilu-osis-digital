@@ -66,6 +66,8 @@ ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
   res.status(200).json({
     success: true,
     supabaseConnected: !!supabase,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
     googleSheets: sheetsStatus,
     privateKeyPreview: getPrivateKeyPreview(process.env.GOOGLE_PRIVATE_KEY),
     sqlSetupInstructions: sqlSetup,
