@@ -1345,19 +1345,24 @@ function syncVotingStationState() {
     
     if (status === 'VOTED') {
       lastKnownStationStatus = 'VOTED';
+      isVoteSubmitting = false;
       if (selectScreen) selectScreen.style.display = 'none';
       if (waitingScreen) waitingScreen.style.display = 'flex';
       
     } else if (status === 'READY') {
-      // Clear all local locks for this booth tab instantly & reliably
-      SessionStore.remove('local_voted_' + currentStationId);
-      isVoteSubmitting = false;
-      
-      // ONLY reset candidate selection if transitioning from VOTED -> READY (Panitia just clicked Lanjut Sesi)
-      if (lastKnownStationStatus === 'VOTED') {
+      if (isVoteSubmitting || localVoted) {
+        if (lastKnownStationStatus !== 'VOTED') {
+          // Stale pre-submit poll — stay locked on green waiting screen!
+          if (selectScreen) selectScreen.style.display = 'none';
+          if (waitingScreen) waitingScreen.style.display = 'flex';
+          return;
+        }
+        // Genuine Lanjut Sesi by Panitia!
+        SessionStore.remove('local_voted_' + currentStationId);
+        isVoteSubmitting = false;
         resetVotingUIForNewVoter();
       }
-
+      
       lastKnownStationStatus = 'READY';
       
       if (selectScreen) selectScreen.style.display = 'flex';
@@ -1415,6 +1420,7 @@ function doSubmitVote(){
   
   // LOCK IMMEDIATELY — both in-memory and sessionStorage (per-tab, isolated)
   isVoteSubmitting = true;
+  lastKnownStationStatus = 'SUBMITTING';
   SessionStore.set('local_voted_' + st, 'true');
   
   // Play LOUD ALARM sound immediately
@@ -1433,12 +1439,16 @@ function doSubmitVote(){
       Toast.error(r ? r.message : 'Gagal mencatat suara');
       // On failure, unlock so user can retry
       isVoteSubmitting = false;
+      lastKnownStationStatus = 'READY';
       SessionStore.remove('local_voted_' + st);
+    } else {
+      lastKnownStationStatus = 'VOTED';
     }
   }).catch(function(e){
     Toast.error(e.message || 'Gagal submit suara');
     // On error, unlock so user can retry
     isVoteSubmitting = false;
+    lastKnownStationStatus = 'READY';
     SessionStore.remove('local_voted_' + st);
   });
 }
