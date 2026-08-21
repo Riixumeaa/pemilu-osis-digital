@@ -812,6 +812,32 @@ setInterval(function(){
 // ---- SUPABASE REALTIME WEBSOCKET SUBSCRIPTION & INSTANT BROADCAST (< 5ms) ----
 var _supabaseRealtimeClient = null;
 var _supabaseBroadcastChannel = null;
+var stationsCache = [];
+
+function updateStationStatusLocally(stationId, newStatus) {
+  if (!stationId) return;
+  if (!stationsCache || !stationsCache.length) {
+    if (newStatus !== 'DELETED') {
+      stationsCache = [{ stationId: stationId, status: newStatus, updatedAt: new Date().toISOString() }];
+    }
+  } else {
+    var found = false;
+    stationsCache.forEach(function(st) {
+      if (String(st.stationId) === String(stationId)) {
+        st.status = newStatus;
+        found = true;
+      }
+    });
+    if (!found && newStatus !== 'DELETED') {
+      stationsCache.push({ stationId: stationId, status: newStatus, updatedAt: new Date().toISOString() });
+    }
+    if (newStatus === 'DELETED') {
+      stationsCache = stationsCache.filter(function(st) { return String(st.stationId) !== String(stationId); });
+    }
+  }
+  // RENDER IMMEDIATELY IN 0ms (NO NETWORK WAIT!)
+  renderDynamicStations(stationsCache);
+}
 
 function initSupabaseRealtime() {
   if (_supabaseRealtimeClient || typeof window.supabase === 'undefined') return;
@@ -823,7 +849,11 @@ function initSupabaseRealtime() {
       // 1. Database Postgres Changes listener (< 10ms)
       _supabaseRealtimeClient
         .channel('public:sessions')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, function() {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, function(evt) {
+          var n = evt && evt.new;
+          if (n && n.station_id && n.status) {
+            updateStationStatusLocally(n.station_id, n.status);
+          }
           if (currentView === 'dashboard') loadDashStats(true);
           if (currentView === 'voting') syncVotingStationState();
         })
@@ -832,8 +862,11 @@ function initSupabaseRealtime() {
       // 2. Direct Client-to-Client Broadcast Channel (< 5ms Instant Push!)
       _supabaseBroadcastChannel = _supabaseRealtimeClient.channel('pemilu_broadcast');
       _supabaseBroadcastChannel
-        .on('broadcast', { event: 'station_update' }, function() {
-          // INSTANT < 5ms BROADCAST SIGNAL!
+        .on('broadcast', { event: 'station_update' }, function(evt) {
+          var p = evt && evt.payload;
+          if (p && p.stationId && p.status) {
+            updateStationStatusLocally(p.stationId, p.status);
+          }
           if (currentView === 'dashboard') loadDashStats(true);
           if (currentView === 'voting') syncVotingStationState();
         })
@@ -843,6 +876,9 @@ function initSupabaseRealtime() {
 }
 
 function broadcastStationChange(stationId, status) {
+  // Update local DOM instantly in 0ms for the sender too!
+  updateStationStatusLocally(stationId, status);
+
   if (_supabaseBroadcastChannel) {
     try {
       _supabaseBroadcastChannel.send({
@@ -1168,6 +1204,7 @@ function loadDashStats(isAuto){
 }
 
 function renderDynamicStations(stations) {
+  if (stations) stationsCache = stations;
   var container = document.getElementById('dash-stations-container');
   if (!stations || !stations.length) {
     container.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="empty-ico">🗳️</div><p>Belum ada Bilik Suara (Station) yang dibuka. Buka Bilik Suara dari Menu Utama untuk memunculkannya di sini.</p></div>';
