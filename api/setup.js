@@ -50,8 +50,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_station ON sessions(station_id, status);
 
--- Safe migration: add columns if missing
+-- Safe migration: rename id to session_id if table was created with 'id'
 DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sessions' AND column_name='id') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sessions' AND column_name='session_id') THEN
+    ALTER TABLE sessions RENAME COLUMN id TO session_id;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sessions' AND column_name='role') THEN
     ALTER TABLE sessions ADD COLUMN role TEXT DEFAULT 'peserta';
   END IF;
