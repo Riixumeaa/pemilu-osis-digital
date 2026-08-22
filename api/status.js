@@ -67,7 +67,7 @@ export default async function handler(req, res) {
         const defaultStations = ['STATION-01', 'STATION-02', 'STATION-03'];
         const multP = parseInt((await supabase.from('settings').select('value').eq('key', 'votes_peserta').single()).data?.value || '1');
         for (const st of defaultStations) {
-          const { data: ex } = await supabase.from('sessions').select('session_id').eq('station_id', st).eq('status', 'ACTIVE').limit(1);
+          const { data: ex } = await supabase.from('sessions').select('*').eq('station_id', st).eq('status', 'ACTIVE').limit(1);
           if (!ex || ex.length === 0) {
             await supabase.from('sessions').insert({ station_id: st, status: 'WAITING', role: 'peserta', vote_multiplier: multP });
           }

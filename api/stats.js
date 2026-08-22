@@ -45,12 +45,12 @@ export default async function handler(req, res) {
 
     const { data: sessions } = await supabase
       .from('sessions')
-      .select('session_id, station_id, status, role, vote_multiplier, created_at, voted_at')
+      .select('*')
       .order('created_at', { ascending: false });
 
     const stationMap = {};
     (sessions || []).forEach(s => {
-      if (!stationMap[s.station_id]) stationMap[s.station_id] = { sessionId: s.session_id, stationId: s.station_id, status: s.status, role: s.role || 'peserta', voteMultiplier: s.vote_multiplier || 1 };
+      if (!stationMap[s.station_id]) stationMap[s.station_id] = { sessionId: s.session_id || s.id, stationId: s.station_id, status: s.status, role: s.role || 'peserta', voteMultiplier: s.vote_multiplier || 1 };
     });
 
     return res.status(200).json({

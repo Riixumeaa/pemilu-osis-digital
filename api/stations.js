@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     if (action === 'get') {
       const { data: sessions } = await supabase
         .from('sessions')
-        .select('session_id, station_id, status, role, vote_multiplier, created_at, voted_at')
+        .select('*')
         .eq('station_id', stationId)
         .order('created_at', { ascending: false })
         .limit(1);
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         stationId,
-        sessionId: latest?.session_id || null,
+        sessionId: latest ? (latest.session_id || latest.id) : null,
         status: latest?.status || 'WAITING',
         role: latest?.role || 'peserta',
         voteMultiplier: latest?.vote_multiplier || 1
@@ -87,7 +87,7 @@ export default async function handler(req, res) {
       // Create an ACTIVE session for the station
       const { data: newSessions, error: sessErr } = await supabase.from('sessions')
         .insert({ station_id: targetStation, status: 'ACTIVE', role: approvedRole, vote_multiplier: multiplier })
-        .select('session_id, station_id, status, role, vote_multiplier');
+        .select('*');
 
       if (sessErr || !newSessions?.[0]) {
         console.error('Session insert error during approve:', sessErr);
@@ -95,11 +95,12 @@ export default async function handler(req, res) {
       }
 
       const newSession = newSessions[0];
+      const actualSessionId = newSession.session_id || newSession.id;
 
       return res.status(200).json({
         success: true,
         stationId: targetStation,
-        sessionId: newSession.session_id,
+        sessionId: actualSessionId,
         role: approvedRole,
         voteMultiplier: multiplier,
         message: `${targetStation} disetujui sebagai ${approvedRole}`
@@ -134,7 +135,7 @@ export default async function handler(req, res) {
 
       const { data: newSessions, error: sessErr } = await supabase.from('sessions')
         .insert({ station_id: stationId, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier })
-        .select('session_id, station_id, status, role, vote_multiplier');
+        .select('*');
 
       if (sessErr || !newSessions?.[0]) {
         console.error('Session insert error during next:', sessErr);
@@ -142,11 +143,12 @@ export default async function handler(req, res) {
       }
 
       const newSession = newSessions[0];
+      const actualSessionId = newSession.session_id || newSession.id;
 
       return res.status(200).json({
         success: true,
         stationId,
-        sessionId: newSession.session_id,
+        sessionId: actualSessionId,
         role: targetRole,
         voteMultiplier: multiplier,
         message: `${stationId} siap untuk peserta berikutnya!`
