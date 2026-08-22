@@ -1122,6 +1122,7 @@
           <button class="tab-btn" onclick="switchAdminTab('kandidat')">👥 Pasangan Calon</button>
           <button class="tab-btn" onclick="switchAdminTab('jadwal')">📅 Jadwal</button>
           <button class="tab-btn" onclick="switchAdminTab('kontrol')">⚡ Kontrol</button>
+          <button class="tab-btn" onclick="switchAdminTab('suara')">🗳️ Pengaturan Suara</button>
           <button class="tab-btn" onclick="switchAdminTab('hasil')">📈 Hasil</button>
           <button class="tab-btn" onclick="switchAdminTab('log')">📋 Log</button>
         </div>
@@ -1234,6 +1235,23 @@
           </div>
         </div>
 
+        <div id="tab-suara" class="tab-content">
+          <h2 class="mb1">⚙️ Pengaturan Bobot Suara</h2>
+          <p class="cmuted tsm mb2">Atur berapa jumlah suara (bobot) yang dimiliki oleh setiap jenis peserta per sesi
+            voting.</p>
+          <div class="card" style="max-width:500px">
+            <div class="fg"><label class="flabel">🎓 Peserta / Siswa (suara per orang)</label><input type="number"
+                id="votes-peserta" class="finput" min="1" max="100" value="1"></div>
+            <div class="fg"><label class="flabel">📋 Panitia (suara per orang)</label><input type="number"
+                id="votes-panitia" class="finput" min="1" max="100" value="1"></div>
+            <div class="fg"><label class="flabel">👩‍🏫 Guru (suara per orang)</label><input type="number"
+                id="votes-guru" class="finput" min="1" max="100" value="1"></div>
+            <p class="fhint mb2">Perubahan berlaku untuk sesi baru. Sesi yang sudah aktif tidak berubah.</p>
+            <button class="btn btn-primary btn-block" id="save-vote-cfg-btn" onclick="saveVoteConfig()">💾 Simpan
+              Konfigurasi</button>
+          </div>
+        </div>
+
         <div id="tab-hasil" class="tab-content">
           <div class="flex fxc fxb mb2">
             <div>
@@ -1310,9 +1328,32 @@
         </div>
       </div>
 
+      <!-- AUTH REQUESTS PANEL -->
+      <div class="card mb2">
+        <div class="card-hdr">
+          <span class="card-title">🔑 Permintaan Autentikasi Peserta</span>
+          <button class="btn btn-sm btn-ghost" onclick="loadAuthRequests()">↻ Refresh</button>
+        </div>
+        <div id="dash-auth-requests">
+          <div class="empty">
+            <p>Tidak ada permintaan autentikasi.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- STATION CONTROL PANEL -->
       <div class="card mb2">
-        <div class="card-hdr"><span class="card-title">🗳️ Kontrol Sesi Bilik Suara</span></div>
+        <div class="card-hdr">
+          <span class="card-title">🗳️ Kontrol Sesi Bilik Suara</span>
+          <div class="flex gap-sm">
+            <select id="bulk-role" class="fselect" style="width:auto;padding:.28rem .55rem;font-size:.8rem">
+              <option value="peserta">🎓 Peserta</option>
+              <option value="panitia">📋 Panitia</option>
+              <option value="guru">👩‍🏫 Guru</option>
+            </select>
+            <button class="btn btn-sm btn-warning" onclick="bulkChangeRole()">Ubah Semua ke Sesi...</button>
+          </div>
+        </div>
         <div id="dash-stations" class="grid g3">
           <div class="empty" style="grid-column:1/-1">
             <div class="empty-ico">🗳️</div>
@@ -1335,20 +1376,38 @@
 
   <!-- ══════════ 4. VOTING STATION ══════════ -->
   <div id="view-voting" class="app-view">
-    <!-- WAITING FOR PANITIA -->
-    <div id="vote-standby" class="full-screen" style="background:linear-gradient(160deg,#0A1628,#1565C0);display:none">
+    <!-- SCREEN 1: IDLE — Press to request auth -->
+    <div id="vote-idle" class="full-screen" style="background:linear-gradient(160deg,#0A1628,#1565C0);display:none">
       <div style="max-width:520px;text-align:center;color:#fff">
-        <div style="font-size:4.5rem;margin-bottom:1rem">🗳️</div>
-        <h1 style="color:#fff;font-size:2rem;margin-bottom:.5rem">BILIK SUARA SIAP</h1>
-        <p style="color:rgba(255,255,255,.85);font-size:1rem;margin-bottom:1.5rem">Menunggu panitia membuka sesi untuk
-          peserta berikutnya...</p>
-        <div id="standby-station-id" class="badge"
-          style="background:rgba(255,255,255,.2);color:#fff;padding:.5rem 1.2rem;font-size:.85rem"><span class="dot"
-            style="background:#fff"></span> Station —</div>
+        <div style="font-size:5rem;margin-bottom:1rem">🗳️</div>
+        <h1 style="color:#fff;font-size:2.2rem;margin-bottom:.6rem">BILIK SUARA</h1>
+        <div id="idle-station-id" class="badge mb2"
+          style="background:rgba(255,255,255,.2);color:#fff;padding:.5rem 1.4rem;font-size:.9rem"><span class="dot"
+            style="background:#fff"></span> STATION-01</div>
+        <p style="color:rgba(255,255,255,.82);font-size:1rem;margin-bottom:2rem">Tekan tombol di bawah untuk memulai
+          proses autentikasi peserta.</p>
+        <button id="request-auth-btn" class="btn btn-lg"
+          style="background:#fff;color:var(--blue);font-size:1.1rem;padding:1.1rem 3rem;border-radius:var(--r-xl)"
+          onclick="requestAuth()">
+          🔔 Panggil Panitia
+        </button>
       </div>
     </div>
 
-    <!-- VOTING SELECTION SCREEN -->
+    <!-- SCREEN 2: PENDING — Waiting for panitia approval -->
+    <div id="vote-pending" class="full-screen" style="background:linear-gradient(160deg,#1A0536,#7C3AED);display:none">
+      <div style="max-width:520px;text-align:center;color:#fff">
+        <div style="font-size:5rem;margin-bottom:1rem;animation:spin 3s linear infinite">⏳</div>
+        <h1 style="color:#fff;font-size:2rem;margin-bottom:.5rem">MENUNGGU AUTENTIKASI</h1>
+        <p style="color:rgba(255,255,255,.85);font-size:1rem;margin-bottom:1.5rem">Permintaan Anda telah dikirim ke
+          panitia.<br>Harap tunggu sampai panitia menyetujui.</p>
+        <div id="pending-station-id" class="badge"
+          style="background:rgba(255,255,255,.2);color:#fff;padding:.5rem 1.2rem"><span class="dot"
+            style="background:#A78BFA"></span> Menunggu persetujuan...</div>
+      </div>
+    </div>
+
+    <!-- SCREEN 3: ACTIVE — Voting selection -->
     <div id="vote-select-screen" style="display:none;flex-direction:column;min-height:100vh;background:var(--bg)">
       <div class="topbar">
         <div class="tb-brand">🗳️ <span>SURAT SUARA OSIS</span></div>
@@ -1358,6 +1417,8 @@
         <div class="tc mt2 mb3">
           <h2>PILIH PASANGAN CALON</h2>
           <p>Klik kartu pasangan pilihan Anda, lalu konfirmasi.</p>
+          <div id="vote-role-badge" class="badge badge-not_started mt1" style="display:inline-flex"><span
+              class="dot"></span> Sesi Peserta</div>
         </div>
         <div id="vote-cand-grid" class="vote-grid"></div>
         <div class="tc mb3">
@@ -1495,58 +1556,41 @@
 
   <script>
     // ================================================================
-    // PEMILU OSIS DIGITAL — FRONTEND ENGINE (VERCEL + SUPABASE LOW-EGRESS)
+    // PEMILU OSIS DIGITAL — ENGINE v3 (Multi-Role Auth + Vote Weight)
     // ================================================================
-
     let adminToken = localStorage.getItem('pemilu_admin_token') || '';
     let selectedCandidateId = null;
     let currentStationId = sessionStorage.getItem('pemilu_station_id') || '';
     let currentSessionId = sessionStorage.getItem('pemilu_session_id') || '';
+    let currentSessionRole = 'peserta';
     let candidateCache = [];
-    let candidateVersion = localStorage.getItem('pemilu_cand_ver') || '0';
-
     let supabaseClient = null;
     let realtimeChannel = null;
     let dashboardPollTimer = null;
     let isTabActive = true;
-
-    // Drag & drop photo state
     let selectedPhotoBase64 = null;
+    let currentAuthRequestId = null; // for pending station
 
-    // Initialize App
     window.addEventListener('DOMContentLoaded', async () => {
       setupVisibilityListener();
       await initSupabaseClient();
-
-      // Hash/Route initialization
       const hash = location.hash.replace('#', '') || 'home';
-      if (hash === 'voting' && currentStationId) {
-        navTo('voting');
-      } else if (hash === 'admin') {
-        navTo('admin');
-      } else if (hash === 'dashboard') {
-        navTo('dashboard');
-      } else {
-        navTo('home');
-      }
-
+      if (hash === 'voting' && currentStationId) navTo('voting');
+      else if (hash === 'admin') navTo('admin');
+      else if (hash === 'dashboard') navTo('dashboard');
+      else navTo('home');
       fetchPublicStatus();
     });
 
     function setupVisibilityListener() {
       document.addEventListener('visibilitychange', () => {
         isTabActive = !document.hidden;
-        const badge = document.getElementById('dash-polling-badge');
-        if (badge) {
-          badge.className = isTabActive ? 'badge badge-running' : 'badge badge-not_started';
-          badge.innerHTML = isTabActive ? '<span class="dot"></span> Live' : '<span class="dot"></span> Paused';
-        }
+        const b = document.getElementById('dash-polling-badge');
+        if (b) { b.className = isTabActive ? 'badge badge-running' : 'badge badge-not_started'; b.innerHTML = isTabActive ? '<span class="dot"></span> Live' : '<span class="dot"></span> Paused'; }
       });
     }
 
-    // ----------------------------------------------------------------
-    // SUPABASE CLIENT & REALTIME (LOW EGRESS!)
-    // ----------------------------------------------------------------
+    // ── SUPABASE REALTIME ─────────────────────────────────────────────
     async function initSupabaseClient() {
       try {
         const res = await fetch('/api/setup');
@@ -1554,419 +1598,350 @@
         if (data.success && data.supabaseUrl && data.supabaseAnonKey) {
           supabaseClient = window.supabase.createClient(data.supabaseUrl, data.supabaseAnonKey);
         }
-      } catch (e) {
-        console.warn('Supabase Realtime not initialized:', e);
-      }
+      } catch (e) { console.warn('Supabase init failed:', e); }
     }
 
     function subscribeStationRealtime(stationId) {
       if (!supabaseClient || realtimeChannel) return;
-
       realtimeChannel = supabaseClient
-        .channel('station_session_' + stationId)
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'sessions',
-          filter: `station_id=eq.${stationId}`
-        }, (payload) => {
-          console.log('Realtime station update:', payload);
-          if (payload.new) {
-            currentSessionId = payload.new.session_id;
+        .channel('station_' + stationId)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `station_id=eq.${stationId}` }, (p) => {
+          if (p.new && p.new.session_id) {
+            currentSessionId = p.new.session_id;
+            currentSessionRole = p.new.role || 'peserta';
             sessionStorage.setItem('pemilu_session_id', currentSessionId);
-            updateVotingStationUI(payload.new.status);
+            updateVotingStationUI(p.new.status);
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'auth_requests', filter: `station_id=eq.${stationId}` }, (p) => {
+          if (p.new && p.new.status === 'REJECTED') {
+            updateVotingStationUI('IDLE'); // panitia rejected -> back to idle
           }
         })
         .subscribe();
     }
 
     function unsubscribeRealtime() {
-      if (realtimeChannel && supabaseClient) {
-        supabaseClient.removeChannel(realtimeChannel);
-        realtimeChannel = null;
-      }
+      if (realtimeChannel && supabaseClient) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
     }
 
-    // ----------------------------------------------------------------
-    // SPA NAVIGATION & ROUTING
-    // ----------------------------------------------------------------
+    // ── NAVIGATION ────────────────────────────────────────────────────
     function navTo(viewId) {
       document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
-      const target = document.getElementById('view-' + viewId);
-      if (target) target.classList.add('active');
-
-      // Stop background timers when navigating away
+      const t = document.getElementById('view-' + viewId);
+      if (t) t.classList.add('active');
       if (dashboardPollTimer) { clearInterval(dashboardPollTimer); dashboardPollTimer = null; }
 
       if (viewId === 'admin') {
-        if (adminToken) {
-          verifyAdminSession().then(valid => {
-            if (valid) showAdminApp();
-            else showAdminLogin();
-          });
-        } else {
-          showAdminLogin();
-        }
+        if (adminToken) verifyAdminSession().then(ok => ok ? showAdminApp() : showAdminLogin());
+        else showAdminLogin();
       } else if (viewId === 'dashboard') {
-        startDashboardPolling();
-        loadDashStats();
+        startDashboardPolling(); loadDashStats(); loadAuthRequests();
       } else if (viewId === 'voting') {
-        if (!currentStationId) {
-          openStationSetup();
-          navTo('home');
-          return;
-        }
+        if (!currentStationId) { openStationSetup(); navTo('home'); return; }
         initVotingStation();
       } else if (viewId === 'home') {
         fetchPublicStatus();
       }
     }
 
-    function showAdminLogin() {
-      document.getElementById('admin-login-screen').style.display = 'flex';
-      document.getElementById('admin-app-screen').style.display = 'none';
-    }
+    function showAdminLogin() { document.getElementById('admin-login-screen').style.display = 'flex'; document.getElementById('admin-app-screen').style.display = 'none'; }
+    function showAdminApp() { document.getElementById('admin-login-screen').style.display = 'none'; document.getElementById('admin-app-screen').style.display = 'flex'; loadOverview(); }
+    function openStationSetup() { if (currentStationId) document.getElementById('station-select').value = currentStationId; openModal('modal-station'); }
+    function confirmStationSetup() { currentStationId = document.getElementById('station-select').value; sessionStorage.setItem('pemilu_station_id', currentStationId); closeModal('modal-station'); navTo('voting'); }
 
-    function showAdminApp() {
-      document.getElementById('admin-login-screen').style.display = 'none';
-      document.getElementById('admin-app-screen').style.display = 'flex';
-      loadOverview();
-    }
-
-    function openStationSetup() {
-      if (currentStationId) {
-        document.getElementById('station-select').value = currentStationId;
-      }
-      openModal('modal-station');
-    }
-
-    function confirmStationSetup() {
-      const sel = document.getElementById('station-select').value;
-      currentStationId = sel;
-      sessionStorage.setItem('pemilu_station_id', sel);
-      closeModal('modal-station');
-      navTo('voting');
-    }
-
-    // ----------------------------------------------------------------
-    // API HELPERS & CACHING (LOW EGRESS!)
-    // ----------------------------------------------------------------
+    // ── PUBLIC STATUS ────────────────────────────────────────────────
     async function fetchPublicStatus() {
-      try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        if (data.success) {
-          updateStatusBadge('home-status-badge', data.status);
-        }
-      } catch (e) { }
+      try { const d = await fetch('/api/status').then(r => r.json()); if (d.success) updateStatusBadge('home-status-badge', d.status); } catch (e) { }
     }
 
+    // ── CANDIDATE CACHE (LOW EGRESS) ──────────────────────────────────
     async function getCandidatesCached() {
       const localCands = localStorage.getItem('pemilu_candidates_cache');
       const localVer = localStorage.getItem('pemilu_cand_ver') || '0';
-
       try {
-        const res = await fetch('/api/candidates');
-        const data = await res.json();
-
+        const data = await fetch('/api/candidates').then(r => r.json());
         if (data.success) {
           if (data.version !== localVer || !localCands) {
             localStorage.setItem('pemilu_candidates_cache', JSON.stringify(data.candidates));
             localStorage.setItem('pemilu_cand_ver', data.version);
             candidateCache = data.candidates;
-          } else {
-            candidateCache = JSON.parse(localCands);
-          }
+          } else { candidateCache = JSON.parse(localCands); }
           return candidateCache;
         }
-      } catch (e) {
-        if (localCands) return JSON.parse(localCands);
-      }
+      } catch (e) { if (localCands) return JSON.parse(localCands); }
       return [];
     }
 
-    // ----------------------------------------------------------------
-    // VOTING STATION LOGIC
-    // ----------------------------------------------------------------
+    // ── VOTING STATION FLOW ───────────────────────────────────────────
     async function initVotingStation() {
-      document.getElementById('vote-station-tag').innerText = currentStationId;
-      document.getElementById('standby-station-id').innerHTML = `<span class="dot" style="background:#fff"></span> ${currentStationId}`;
-
       subscribeStationRealtime(currentStationId);
+      document.getElementById('idle-station-id').innerHTML = `<span class="dot" style="background:#fff"></span> ${currentStationId}`;
+      document.getElementById('pending-station-id').innerHTML = `<span class="dot" style="background:#A78BFA"></span> ${currentStationId} — Menunggu...`;
+      document.getElementById('vote-station-tag').innerText = currentStationId;
 
-      // Session Recovery on refresh
       try {
-        const res = await fetch(`/api/stations?action=get&stationId=${currentStationId}`);
-        const data = await res.json();
+        const data = await fetch(`/api/stations?action=get&stationId=${currentStationId}`).then(r => r.json());
         if (data.success) {
           currentSessionId = data.sessionId || '';
+          currentSessionRole = data.role || 'peserta';
           if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
           updateVotingStationUI(data.status);
-        } else {
-          updateVotingStationUI('WAITING');
-        }
-      } catch (e) {
-        updateVotingStationUI('WAITING');
-      }
+        } else updateVotingStationUI('IDLE');
+      } catch (e) { updateVotingStationUI('IDLE'); }
     }
 
     async function updateVotingStationUI(status) {
-      const standby = document.getElementById('vote-standby');
-      const selectScreen = document.getElementById('vote-select-screen');
-      const successScreen = document.getElementById('vote-success-screen');
-
-      standby.style.display = 'none';
-      selectScreen.style.display = 'none';
-      successScreen.style.display = 'none';
+      const idle = document.getElementById('vote-idle');
+      const pending = document.getElementById('vote-pending');
+      const select = document.getElementById('vote-select-screen');
+      const success = document.getElementById('vote-success-screen');
+      idle.style.display = pending.style.display = select.style.display = success.style.display = 'none';
 
       if (status === 'ACTIVE') {
-        selectScreen.style.display = 'flex';
+        select.style.display = 'flex';
+        // Role badge
+        const roleLabels = { peserta: '🎓 Sesi Peserta', panitia: '📋 Sesi Panitia', guru: '👩‍🏫 Sesi Guru' };
+        const rb = document.getElementById('vote-role-badge');
+        if (rb) rb.innerHTML = `<span class="dot"></span> ${roleLabels[currentSessionRole] || currentSessionRole}`;
         await renderVotingCards();
       } else if (status === 'VOTED' || status === 'COMPLETED') {
-        successScreen.style.display = 'flex';
-      } else {
-        standby.style.display = 'flex';
+        success.style.display = 'flex';
+      } else if (status === 'PENDING') {
+        pending.style.display = 'flex';
+      } else { // IDLE, WAITING
+        idle.style.display = 'flex';
+        currentAuthRequestId = null;
+        const btn = document.getElementById('request-auth-btn');
+        if (btn) { btn.disabled = false; btn.innerHTML = '🔔 Panggil Panitia'; }
       }
+    }
+
+    async function requestAuth() {
+      const btn = document.getElementById('request-auth-btn');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Mengirim...';
+      try {
+        const data = await fetch('/api/stations?action=request_auth', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stationId: currentStationId })
+        }).then(r => r.json());
+        if (data.success) {
+          currentAuthRequestId = data.requestId;
+          updateVotingStationUI('PENDING');
+        } else { btn.disabled = false; btn.innerHTML = '🔔 Panggil Panitia'; toast(data.message || 'Gagal mengirim.', 'error'); }
+      } catch (e) { btn.disabled = false; btn.innerHTML = '🔔 Panggil Panitia'; toast('Koneksi bermasalah.', 'error'); }
     }
 
     async function renderVotingCards() {
       const grid = document.getElementById('vote-cand-grid');
       grid.innerHTML = '<div class="empty"><p>Memuat kertas suara...</p></div>';
-
       const cands = await getCandidatesCached();
-      const activeCands = cands.filter(c => c.active);
-
-      if (activeCands.length === 0) {
-        grid.innerHTML = '<div class="empty"><p>Belum ada kandidat aktif.</p></div>';
-        return;
-      }
-
-      grid.innerHTML = activeCands.map(c => `
-    <div class="vote-card ${selectedCandidateId === c.id ? 'selected' : ''}" id="vcand-${c.id}" onclick="selectCandidate('${c.id}')">
-      <div class="vote-num-tag">#${c.number}</div>
-      ${c.pairImageUrl
-          ? `<img src="${c.pairImageUrl}" class="vote-img" alt="Foto Pasangan #${c.number}">`
-          : `<div class="vote-img-ph">👥</div>`}
-      <div style="font-weight:800;font-size:1.15rem;margin-top:.4rem">${escapeHtml(c.chairman)}</div>
-      <div class="tsm cmuted" style="margin-top:.2rem">&amp; ${escapeHtml(c.vice)}</div>
-    </div>
-  `).join('');
+      const actives = cands.filter(c => c.active);
+      if (!actives.length) { grid.innerHTML = '<div class="empty"><p>Belum ada kandidat aktif.</p></div>'; return; }
+      selectedCandidateId = null;
+      document.getElementById('vote-submit-btn').setAttribute('disabled', 'true');
+      grid.innerHTML = actives.map(c => `
+        <div class="vote-card" id="vcand-${c.id}" onclick="selectCandidate('${c.id}')">
+          <div class="vote-num-tag">#${c.number}</div>
+          ${c.pairImageUrl ? `<img src="${c.pairImageUrl}" class="vote-img" alt="Foto #${c.number}">` : '<div class="vote-img-ph">👥</div>'}
+          <div style="font-weight:800;font-size:1.15rem;margin-top:.4rem">${escapeHtml(c.chairman)}</div>
+          <div class="tsm cmuted" style="margin-top:.2rem">&amp; ${escapeHtml(c.vice)}</div>
+        </div>`).join('');
     }
 
     function selectCandidate(id) {
       selectedCandidateId = id;
       document.querySelectorAll('.vote-card').forEach(el => el.classList.remove('selected'));
-      const target = document.getElementById('vcand-' + id);
-      if (target) target.classList.add('selected');
+      document.getElementById('vcand-' + id)?.classList.add('selected');
       document.getElementById('vote-submit-btn').removeAttribute('disabled');
     }
 
     function openVoteConfirm() {
       if (!selectedCandidateId) return;
-      const cand = candidateCache.find(c => c.id === selectedCandidateId);
-      if (!cand) return;
-
-      document.getElementById('confirm-num').innerText = `Pasangan #${cand.number}`;
-      document.getElementById('confirm-names').innerText = `${cand.chairman} & ${cand.vice}`;
+      const c = candidateCache.find(c => c.id === selectedCandidateId);
+      if (!c) return;
+      document.getElementById('confirm-num').innerText = `Pasangan #${c.number}`;
+      document.getElementById('confirm-names').innerText = `${c.chairman} & ${c.vice}`;
       openModal('modal-vote-confirm');
     }
 
     async function doSubmitVote() {
       const btn = document.getElementById('confirm-vote-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Mengirim...';
-
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Mengirim...';
       try {
-        const res = await fetch('/api/vote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: currentSessionId,
-            stationId: currentStationId,
-            candidateId: selectedCandidateId
-          })
-        });
-        const data = await res.json();
-
+        const data = await fetch('/api/vote', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: currentSessionId, stationId: currentStationId, candidateId: selectedCandidateId })
+        }).then(r => r.json());
         closeModal('modal-vote-confirm');
-
-        if (data.success) {
-          toast('Suara Anda telah berhasil dikonfirmasi!', 'success');
-          updateVotingStationUI('VOTED');
-        } else {
-          toast(data.message || 'Koneksi bermasalah. Suara belum dikonfirmasi.', 'error');
-        }
-      } catch (e) {
-        closeModal('modal-vote-confirm');
-        toast('Koneksi bermasalah. Suara belum dikonfirmasi.', 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '✔️ Ya, Kirim Suara';
-      }
+        if (data.success) { toast('Suara berhasil dicatat!', 'success'); updateVotingStationUI('VOTED'); }
+        else toast(data.message || 'Koneksi bermasalah. Suara belum dikonfirmasi.', 'error');
+      } catch (e) { closeModal('modal-vote-confirm'); toast('Koneksi bermasalah. Suara belum dikonfirmasi.', 'error'); }
+      finally { btn.disabled = false; btn.innerHTML = '✔️ Ya, Kirim Suara'; }
     }
 
-    // ----------------------------------------------------------------
-    // DASHBOARD PANITIA LOGIC (LOW EGRESS POLLING)
-    // ----------------------------------------------------------------
+    // ── DASHBOARD ─────────────────────────────────────────────────────
     function startDashboardPolling() {
       if (dashboardPollTimer) clearInterval(dashboardPollTimer);
-      // Adaptive polling: 5 seconds, auto-paused when tab hidden
-      dashboardPollTimer = setInterval(() => {
-        if (isTabActive) loadDashStats();
-      }, 5000);
+      dashboardPollTimer = setInterval(() => { if (isTabActive) { loadDashStats(); loadAuthRequests(); } }, 5000);
     }
 
     async function loadDashStats() {
       try {
-        const res = await fetch('/api/stats');
-        const data = await res.json();
+        const data = await fetch('/api/stats').then(r => r.json());
         if (!data.success) return;
-
         document.getElementById('dash-total-votes').innerText = data.totalVotes;
         updateStatusBadge('dash-el-status', data.electionStatus);
 
-        // Stations Panel
         const stCnt = document.getElementById('dash-stations');
-        if (data.stations && data.stations.length > 0) {
+        if (data.stations?.length) {
+          const roleLabels = { peserta: '🎓 Peserta', panitia: '📋 Panitia', guru: '👩‍🏫 Guru' };
           stCnt.innerHTML = data.stations.map(st => `
-        <div class="station-card s-${st.status.toLowerCase()}">
-          <div style="font-weight:800;font-size:1.1rem;color:var(--text)">${st.stationId}</div>
-          <div class="badge badge-${st.status === 'ACTIVE' ? 'running' : st.status === 'VOTED' ? 'finished' : 'not_started'}">
-            <span class="dot"></span> ${st.status === 'ACTIVE' ? 'SEDANG MEMILIH' : st.status === 'VOTED' ? '✓ SELESAI' : 'SIAP'}
-          </div>
-          <button class="btn btn-primary btn-sm btn-block mt1" onclick="nextVoter('${st.stationId}')">
-            ➡️ PESERTA BERIKUTNYA
-          </button>
-        </div>
-      `).join('');
-        } else {
-          stCnt.innerHTML = '<div class="empty" style="grid-column:1/-1"><p>Belum ada station aktif.</p></div>';
-        }
+            <div class="station-card s-${st.status.toLowerCase()}">
+              <div style="font-weight:800;font-size:1.1rem">${st.stationId}</div>
+              <div class="badge badge-${st.status === 'ACTIVE' ? 'running' : st.status === 'VOTED' ? 'finished' : 'not_started'}">
+                <span class="dot"></span> ${st.status === 'ACTIVE' ? 'MEMILIH' : st.status === 'VOTED' ? '✓ SELESAI' : st.status === 'WAITING' ? 'MENUNGGU AUTH' : 'SIAP'}
+              </div>
+              <div class="tsm cmuted">${roleLabels[st.role || 'peserta'] || st.role} (×${st.voteMultiplier || 1})</div>
+              <div class="flex gap-sm" style="width:100%;flex-wrap:wrap">
+                <select id="role-sel-${st.stationId}" class="fselect" style="flex:1;font-size:.75rem;padding:.3rem">
+                  <option value="peserta" ${st.role === 'peserta' ? 'selected' : ''}>🎓 Peserta</option>
+                  <option value="panitia" ${st.role === 'panitia' ? 'selected' : ''}>📋 Panitia</option>
+                  <option value="guru" ${st.role === 'guru' ? 'selected' : ''}>👩‍🏫 Guru</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="nextVoter('${st.stationId}')">➡️ Berikutnya</button>
+                <button class="btn btn-error btn-sm" onclick="disconnectStation('${st.stationId}')">✕</button>
+              </div>
+            </div>`).join('');
+        } else stCnt.innerHTML = '<div class="empty" style="grid-column:1/-1"><p>Belum ada station aktif.</p></div>';
 
-        // Breakdown Panel
         const brCnt = document.getElementById('dash-breakdown');
-        let leadingName = '—';
-        let maxVotes = -1;
-
-        if (data.breakdown && data.breakdown.length > 0) {
+        let leadingName = '—', maxV = -1;
+        if (data.breakdown?.length) {
           brCnt.innerHTML = data.breakdown.map(b => {
-            if (b.votes > maxVotes && b.votes > 0) {
-              maxVotes = b.votes;
-              leadingName = `Pasangan #${b.number}`;
-            }
-            return `
-          <div class="result-item">
-            <div class="result-hdr">
-              <span class="result-name">Pasangan #${b.number} — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span>
-              <span class="result-pct">${b.percentage}% (${b.votes} suara)</span>
-            </div>
-            <div class="progress-wrap">
-              <div class="progress-bar" style="width:${b.percentage}%"></div>
-            </div>
-          </div>
-        `;
+            if (b.votes > maxV) { maxV = b.votes; leadingName = `Pasangan #${b.number}`; }
+            return `<div class="result-item"><div class="result-hdr"><span class="result-name">Pasangan #${b.number} — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span><span class="result-pct">${b.percentage}% (${b.votes} suara)</span></div><div class="progress-wrap"><div class="progress-bar" style="width:${b.percentage}%"></div></div></div>`;
           }).join('');
         }
         document.getElementById('dash-leading').innerText = leadingName;
       } catch (e) { }
     }
 
-    async function nextVoter(stationId) {
+    async function loadAuthRequests() {
+      const cnt = document.getElementById('dash-auth-requests');
+      if (!cnt) return;
       try {
-        const res = await fetch('/api/stations?action=next', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stationId })
-        });
-        const data = await res.json();
-        if (data.success) {
-          toast(`${stationId} siap untuk peserta berikutnya!`, 'success');
-          loadDashStats();
-        } else {
-          toast(data.message || 'Gagal memulai sesi baru.', 'error');
-        }
-      } catch (e) {
-        toast('Koneksi bermasalah.', 'error');
-      }
+        const data = await fetch('/api/stations?action=get_auth_requests').then(r => r.json());
+        if (!data.success || !data.requests?.length) { cnt.innerHTML = '<div class="empty"><p>Tidak ada permintaan autentikasi.</p></div>'; return; }
+        cnt.innerHTML = data.requests.map(req => `
+          <div style="display:flex;align-items:center;gap:.7rem;padding:.7rem;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);margin-bottom:.5rem">
+            <div style="flex:1"><strong>${req.station_id}</strong><span class="tsm cmuted ml1">ingin autentikasi</span></div>
+            <select id="role-auth-${req.id}" class="fselect" style="width:auto;font-size:.78rem;padding:.28rem .5rem">
+              <option value="peserta">🎓 Peserta</option>
+              <option value="panitia">📋 Panitia</option>
+              <option value="guru">👩‍🏫 Guru</option>
+            </select>
+            <button class="btn btn-success btn-sm" onclick="approveAuth('${req.id}')">✓ Setujui</button>
+            <button class="btn btn-error btn-sm" onclick="rejectAuth('${req.id}')">✕ Tolak</button>
+          </div>`).join('');
+      } catch (e) { cnt.innerHTML = '<div class="empty"><p>Gagal memuat permintaan.</p></div>'; }
     }
 
-    // ----------------------------------------------------------------
-    // ADMIN PANEL LOGIC
-    // ----------------------------------------------------------------
+    async function approveAuth(requestId) {
+      const roleEl = document.getElementById('role-auth-' + requestId);
+      const role = roleEl ? roleEl.value : 'peserta';
+      const data = await fetch('/api/stations?action=approve_auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId, role })
+      }).then(r => r.json());
+      if (data.success) { toast(data.message, 'success'); loadAuthRequests(); loadDashStats(); }
+      else toast(data.message || 'Gagal menyetujui.', 'error');
+    }
+
+    async function rejectAuth(requestId) {
+      const data = await fetch('/api/stations?action=reject_auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId })
+      }).then(r => r.json());
+      if (data.success) { toast('Permintaan ditolak.', 'warning'); loadAuthRequests(); }
+    }
+
+    async function nextVoter(stationId) {
+      const roleEl = document.getElementById('role-sel-' + stationId);
+      const role = roleEl ? roleEl.value : 'peserta';
+      const data = await fetch('/api/stations?action=next', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stationId, role })
+      }).then(r => r.json());
+      if (data.success) { toast(`${stationId} siap peserta berikutnya!`, 'success'); loadDashStats(); }
+      else toast(data.message || 'Gagal.', 'error');
+    }
+
+    async function disconnectStation(stationId) {
+      if (!confirm(`Putuskan sesi ${stationId}?`)) return;
+      const data = await fetch('/api/stations?action=disconnect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stationId })
+      }).then(r => r.json());
+      if (data.success) { toast(data.message, 'warning'); loadDashStats(); loadAuthRequests(); }
+    }
+
+    async function bulkChangeRole() {
+      const role = document.getElementById('bulk-role').value;
+      if (!confirm(`Ubah semua bilik ke sesi ${role}?`)) return;
+      const data = await fetch('/api/stations?action=change_role', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role })
+      }).then(r => r.json());
+      if (data.success) { toast(data.message, 'success'); loadDashStats(); }
+    }
+
+    // ── ADMIN ─────────────────────────────────────────────────────────
     async function doLogin() {
       const pw = document.getElementById('login-pw').value;
-      if (!pw) return toast('Masukkan password admin!', 'warning');
-
+      if (!pw) return toast('Masukkan password!', 'warning');
       const btn = document.getElementById('login-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Memeriksa...';
-
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Memeriksa...';
       try {
-        const res = await fetch('/api/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: pw })
-        });
-        const data = await res.json();
-        if (data.success) {
-          adminToken = data.token;
-          localStorage.setItem('pemilu_admin_token', adminToken);
-          showAdminApp();
-          toast('Login admin berhasil!', 'success');
-        } else {
-          toast(data.message || 'Password salah.', 'error');
-        }
-      } catch (e) {
-        toast('Gagal terhubung ke server.', 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '🔐 Masuk';
-      }
+        const data = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) }).then(r => r.json());
+        if (data.success) { adminToken = data.token; localStorage.setItem('pemilu_admin_token', adminToken); showAdminApp(); toast('Login berhasil!', 'success'); }
+        else toast(data.message || 'Password salah.', 'error');
+      } catch (e) { toast('Gagal terhubung.', 'error'); }
+      finally { btn.disabled = false; btn.innerHTML = '🔐 Masuk'; }
     }
 
     async function verifyAdminSession() {
       if (!adminToken) return false;
-      try {
-        const res = await fetch(`/api/auth?action=verify&token=${adminToken}`);
-        const data = await res.json();
-        return data.valid === true;
-      } catch (e) { return false; }
+      try { const d = await fetch(`/api/auth?action=verify&token=${adminToken}`).then(r => r.json()); return d.valid === true; } catch (e) { return false; }
     }
 
     function doLogout() {
       if (adminToken) fetch(`/api/auth?token=${adminToken}`, { method: 'DELETE' });
-      adminToken = '';
-      localStorage.removeItem('pemilu_admin_token');
-      showAdminLogin();
-      toast('Telah keluar dari admin panel.', 'warning');
+      adminToken = ''; localStorage.removeItem('pemilu_admin_token');
+      showAdminLogin(); toast('Keluar dari admin.', 'warning');
     }
 
     function switchAdminTab(tabId) {
       document.querySelectorAll('#admin-app-screen .tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('#admin-app-screen .tab-content').forEach(c => c.classList.remove('active'));
-
       event.target.classList.add('active');
-      const target = document.getElementById('tab-' + tabId);
-      if (target) target.classList.add('active');
-
+      document.getElementById('tab-' + tabId)?.classList.add('active');
       if (tabId === 'overview') loadOverview();
       if (tabId === 'kandidat') loadCandidateAdminList();
       if (tabId === 'kontrol') loadKontrolStatus();
+      if (tabId === 'suara') loadVoteConfig();
       if (tabId === 'hasil') loadHasil();
       if (tabId === 'log') loadLogs();
     }
 
     async function loadOverview() {
       try {
-        const res = await fetch('/api/stats');
-        const data = await res.json();
+        const data = await fetch('/api/stats').then(r => r.json());
         if (!data.success) return;
-
         document.getElementById('ov-votes').innerText = data.totalVotes;
-        document.getElementById('ov-cands').innerText = data.breakdown ? data.breakdown.length : 0;
-        document.getElementById('ov-stations').innerText = data.stations ? data.stations.length : 0;
+        document.getElementById('ov-cands').innerText = data.breakdown?.length || 0;
+        document.getElementById('ov-stations').innerText = data.stations?.length || 0;
         updateStatusBadge('ov-status', data.electionStatus);
-
         document.getElementById('ov-title').innerText = data.title;
         document.getElementById('ov-title-input').value = data.title;
       } catch (e) { }
@@ -1974,259 +1949,164 @@
 
     async function saveTitle() {
       const title = document.getElementById('ov-title-input').value;
-      if (!title) return toast('Judul tidak boleh kosong!', 'warning');
+      if (!title) return toast('Judul kosong!', 'warning');
+      const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'setTitle', token: adminToken, title }) }).then(r => r.json());
+      if (data.success) { toast(data.message, 'success'); loadOverview(); }
+    }
 
-      const res = await fetch('/api/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'setTitle', token: adminToken, title })
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast(data.message, 'success');
-        loadOverview();
-      }
+    async function loadVoteConfig() {
+      try {
+        const data = await fetch('/api/status').then(r => r.json());
+        if (data.voteConfig) {
+          document.getElementById('votes-peserta').value = data.voteConfig.peserta || 1;
+          document.getElementById('votes-panitia').value = data.voteConfig.panitia || 1;
+          document.getElementById('votes-guru').value = data.voteConfig.guru || 1;
+        }
+      } catch (e) { }
+    }
+
+    async function saveVoteConfig() {
+      const btn = document.getElementById('save-vote-cfg-btn');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
+      const p = parseInt(document.getElementById('votes-peserta').value) || 1;
+      const pa = parseInt(document.getElementById('votes-panitia').value) || 1;
+      const g = parseInt(document.getElementById('votes-guru').value) || 1;
+      const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'setVoteConfig', token: adminToken, peserta: p, panitia: pa, guru: g }) }).then(r => r.json());
+      if (data.success) toast(data.message, 'success');
+      else toast(data.message || 'Gagal.', 'error');
+      btn.disabled = false; btn.innerHTML = '💾 Simpan Konfigurasi';
+    }
+
+    async function saveSchedule() {
+      const start = document.getElementById('sched-start').value;
+      const end = document.getElementById('sched-end').value;
+      if (!start || !end) return toast('Isi waktu mulai dan selesai!', 'warning');
+      if (new Date(start) >= new Date(end)) return toast('Waktu mulai harus sebelum selesai!', 'warning');
+      const btn = document.getElementById('sched-btn');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+      const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'schedule', token: adminToken, startTime: new Date(start).toISOString(), endTime: new Date(end).toISOString() }) }).then(r => r.json());
+      btn.disabled = false; btn.innerHTML = '💾 Simpan Jadwal';
+      if (data.success) toast(data.message, 'success');
+      else toast(data.message || 'Gagal simpan jadwal.', 'error');
     }
 
     async function loadCandidateAdminList() {
       const cnt = document.getElementById('cand-list');
-      cnt.innerHTML = '<div class="empty"><p>Memuat kandidat...</p></div>';
-
+      cnt.innerHTML = '<div class="empty"><p>Memuat...</p></div>';
       const cands = await getCandidatesCached();
-      if (cands.length === 0) {
-        cnt.innerHTML = '<div class="empty"><div class="empty-ico">👥</div><p>Belum ada pasangan calon.</p></div>';
-        return;
-      }
-
+      if (!cands.length) { cnt.innerHTML = '<div class="empty"><div class="empty-ico">👥</div><p>Belum ada pasangan.</p></div>'; return; }
       cnt.innerHTML = cands.map(c => `
-    <div class="cand-card">
-      <div class="cand-num">#${c.number}</div>
-      ${c.pairImageUrl ? `<img src="${c.pairImageUrl}" style="width:50px;height:50px;border-radius:6px;object-fit:cover">` : ''}
-      <div class="cand-info">
-        <div class="cand-name">${escapeHtml(c.chairman)} &amp; ${escapeHtml(c.vice)}</div>
-        <div class="cand-vice">${c.active ? '🟢 Aktif' : '🔴 Non-Aktif'}</div>
-      </div>
-      <div class="cand-actions">
-        <button class="btn btn-sm btn-ghost" onclick="toggleCandActive('${c.id}', ${!c.active})">${c.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
-        <button class="btn btn-sm btn-error" onclick="deleteCand('${c.id}')">Hapus</button>
-      </div>
-    </div>
-  `).join('');
+        <div class="cand-card">
+          <div class="cand-num">#${c.number}</div>
+          ${c.pairImageUrl ? `<img src="${c.pairImageUrl}" style="width:50px;height:50px;border-radius:6px;object-fit:cover">` : ''}
+          <div class="cand-info"><div class="cand-name">${escapeHtml(c.chairman)} &amp; ${escapeHtml(c.vice)}</div><div class="cand-vice">${c.active ? '🟢 Aktif' : '🔴 Non-Aktif'}</div></div>
+          <div class="cand-actions">
+            ${c.pairImageUrl ? `<button class="btn btn-sm btn-warning" onclick="removeCandPhoto('${c.id}')">Hapus Foto</button>` : ''}
+            <button class="btn btn-sm btn-ghost" onclick="toggleCandActive('${c.id}',${!c.active})">${c.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+            <button class="btn btn-sm btn-error" onclick="deleteCand('${c.id}')">Hapus</button>
+          </div>
+        </div>`).join('');
     }
 
     function openAddModal() {
       document.getElementById('edit-id').value = '';
       document.getElementById('modal-cand-title').innerText = '➕ Tambah Pasangan Calon';
-      document.getElementById('cand-number').value = '';
-      document.getElementById('cand-chairman').value = '';
-      document.getElementById('cand-vice').value = '';
+      ['cand-number', 'cand-chairman', 'cand-vice'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('photo-preview').classList.add('hidden');
       document.getElementById('photo-placeholder').classList.remove('hidden');
       selectedPhotoBase64 = null;
       openModal('modal-add-cand');
     }
 
-    // Client-side compressed photo handling
     function handlePhotoSelect(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      compressImage(file, 800, 0.8, (base64) => {
-        selectedPhotoBase64 = base64;
+      const file = e.target.files[0]; if (!file) return;
+      compressImage(file, 800, 0.8, b64 => {
+        selectedPhotoBase64 = b64;
         const prev = document.getElementById('photo-preview');
-        prev.src = base64;
-        prev.classList.remove('hidden');
+        prev.src = b64; prev.classList.remove('hidden');
         document.getElementById('photo-placeholder').classList.add('hidden');
       });
     }
 
-    function compressImage(file, maxWidth, quality, callback) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let w = img.width, h = img.height;
-          if (w > maxWidth) { h = Math.round((h * maxWidth) / w); w = maxWidth; }
-          canvas.width = w; canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, w, h);
-          callback(canvas.toDataURL('image/jpeg', quality));
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
+    function compressImage(file, maxW, quality, cb) {
+      const r = new FileReader();
+      r.onload = e => { const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); let w = img.width, h = img.height; if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; } c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); cb(c.toDataURL('image/jpeg', quality)); }; img.src = e.target.result; };
+      r.readAsDataURL(file);
     }
 
     async function saveCandidate() {
       const number = document.getElementById('cand-number').value;
       const chairman = document.getElementById('cand-chairman').value;
       const vice = document.getElementById('cand-vice').value;
-
       if (!number || !chairman || !vice) return toast('Lengkapi semua field!', 'warning');
-
       const btn = document.getElementById('save-cand-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
-
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
       try {
-        const res = await fetch('/api/candidates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'add',
-            candidate: {
-              number: parseInt(number),
-              chairman, vice,
-              pairImageUrl: selectedPhotoBase64 || ''
-            }
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          toast('Pasangan calon berhasil ditambahkan!', 'success');
-          closeModal('modal-add-cand');
-          localStorage.removeItem('pemilu_candidates_cache'); // Invalidate cache
-          loadCandidateAdminList();
-        } else {
-          toast(data.message || 'Gagal menyimpan.', 'error');
-        }
-      } catch (e) {
-        toast('Koneksi bermasalah.', 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '💾 Simpan';
-      }
+        const data = await fetch('/api/candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', candidate: { number: parseInt(number), chairman, vice, pairImageUrl: selectedPhotoBase64 || '' } }) }).then(r => r.json());
+        if (data.success) { toast('Pasangan berhasil ditambahkan!', 'success'); closeModal('modal-add-cand'); localStorage.removeItem('pemilu_candidates_cache'); loadCandidateAdminList(); }
+        else toast(data.message || 'Gagal.', 'error');
+      } catch (e) { toast('Koneksi bermasalah.', 'error'); }
+      finally { btn.disabled = false; btn.innerHTML = '💾 Simpan'; }
     }
 
-    async function toggleCandActive(id, activeState) {
-      const res = await fetch('/api/candidates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'toggle', candidate: { id, active: activeState } })
-      });
-      const data = await res.json();
-      if (data.success) {
-        localStorage.removeItem('pemilu_candidates_cache');
-        loadCandidateAdminList();
-      }
+    async function removeCandPhoto(id) {
+      if (!confirm('Hapus foto kandidat ini?')) return;
+      const data = await fetch('/api/candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'removeImage', candidate: { id } }) }).then(r => r.json());
+      if (data.success) { toast('Foto dihapus!', 'success'); localStorage.removeItem('pemilu_candidates_cache'); loadCandidateAdminList(); }
+    }
+
+    async function toggleCandActive(id, active) {
+      const data = await fetch('/api/candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'toggle', candidate: { id, active } }) }).then(r => r.json());
+      if (data.success) { localStorage.removeItem('pemilu_candidates_cache'); loadCandidateAdminList(); }
     }
 
     async function deleteCand(id) {
-      if (!confirm('Yakin ingin menghapus pasangan calon ini?')) return;
-      const res = await fetch('/api/candidates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', candidate: { id } })
-      });
-      const data = await res.json();
-      if (data.success) {
-        localStorage.removeItem('pemilu_candidates_cache');
-        loadCandidateAdminList();
-      }
+      if (!confirm('Hapus pasangan ini?')) return;
+      const data = await fetch('/api/candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', candidate: { id } }) }).then(r => r.json());
+      if (data.success) { localStorage.removeItem('pemilu_candidates_cache'); loadCandidateAdminList(); }
     }
 
-    // Control election actions
     async function doStart() {
-      const res = await fetch('/api/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'setStatus', token: adminToken, value: 'RUNNING' })
-      });
-      const data = await res.json();
+      const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'setStatus', token: adminToken, value: 'RUNNING' }) }).then(r => r.json());
       if (data.success) { toast('Pemilu DIMULAI!', 'success'); loadKontrolStatus(); }
     }
-
     async function doStop() {
-      const res = await fetch('/api/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'setStatus', token: adminToken, value: 'FINISHED' })
-      });
-      const data = await res.json();
+      const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'setStatus', token: adminToken, value: 'FINISHED' }) }).then(r => r.json());
       if (data.success) { toast('Pemilu DIHENTIKAN!', 'warning'); loadKontrolStatus(); }
     }
-
-    function openResetModal() {
-      document.getElementById('reset-confirm-input').value = '';
-      openModal('modal-reset');
-    }
-
+    function openResetModal() { document.getElementById('reset-confirm-input').value = ''; openModal('modal-reset'); }
     async function doReset() {
-      const input = document.getElementById('reset-confirm-input').value;
-      if (input !== 'RESET') return toast('Ketik RESET untuk konfirmasi!', 'warning');
-
-      const res = await fetch('/api/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'resetAll', token: adminToken })
-      });
-      const data = await res.json();
+      if (document.getElementById('reset-confirm-input').value !== 'RESET') return toast('Ketik RESET!', 'warning');
+      const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resetAll', token: adminToken }) }).then(r => r.json());
       closeModal('modal-reset');
-      if (data.success) {
-        toast('Pemilu berhasil di-reset!', 'success');
-        loadKontrolStatus();
-      }
+      if (data.success) { toast('Pemilu di-reset!', 'success'); loadKontrolStatus(); }
     }
-
     async function loadKontrolStatus() {
-      const res = await fetch('/api/status');
-      const data = await res.json();
-      if (data.success) {
-        document.getElementById('kontrol-status').innerHTML = `
-      <p>Status: <strong>${data.status}</strong></p>
-      <p>Judul: <strong>${data.title}</strong></p>
-    `;
-      }
+      const data = await fetch('/api/status').then(r => r.json());
+      if (data.success) document.getElementById('kontrol-status').innerHTML = `<p>Status: <strong>${data.status}</strong></p><p>Judul: <strong>${escapeHtml(data.title)}</strong></p>`;
     }
-
     async function loadHasil() {
-      const res = await fetch('/api/stats');
-      const data = await res.json();
+      const data = await fetch('/api/stats').then(r => r.json());
       if (!data.success) return;
-
       document.getElementById('hasil-total').innerText = data.totalVotes;
       const cnt = document.getElementById('hasil-list');
-      if (data.breakdown && data.breakdown.length > 0) {
-        cnt.innerHTML = data.breakdown.map(b => `
-      <div class="result-item">
-        <div class="result-hdr">
-          <span class="result-name">Pasangan #${b.number} — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span>
-          <span class="result-pct">${b.percentage}% (${b.votes} suara)</span>
-        </div>
-        <div class="progress-wrap"><div class="progress-bar" style="width:${b.percentage}%"></div></div>
-      </div>
-    `).join('');
-      }
+      cnt.innerHTML = (data.breakdown || []).map(b => `<div class="result-item"><div class="result-hdr"><span class="result-name">Pasangan #${b.number} — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span><span class="result-pct">${b.percentage}% (${b.votes} suara)</span></div><div class="progress-wrap"><div class="progress-bar" style="width:${b.percentage}%"></div></div></div>`).join('');
     }
-
+    async function loadLogs() {
+      const cnt = document.getElementById('log-list');
+      cnt.innerHTML = '<div class="empty"><p>Log belum tersedia.</p></div>';
+    }
     function exportPDF() { window.print(); }
 
-    // ----------------------------------------------------------------
-    // UTILITY FUNCTIONS
-    // ----------------------------------------------------------------
+    // ── UTILS ─────────────────────────────────────────────────────────
     function openModal(id) { document.getElementById(id).classList.add('open'); }
     function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-
-    function toast(msg, type = 'info') {
-      const cnt = document.getElementById('toast-cnt');
-      const t = document.createElement('div');
-      t.className = `toast toast-${type}`;
-      t.innerText = msg;
-      cnt.appendChild(t);
-      setTimeout(() => t.remove(), 4000);
-    }
-
-    function updateStatusBadge(elemId, status) {
-      const el = document.getElementById(elemId);
-      if (!el) return;
-      const s = (status || 'NOT_STARTED').toLowerCase();
-      el.className = `badge badge-${s}`;
-      el.innerHTML = `<span class="dot"></span> ${status || 'NOT_STARTED'}`;
-    }
-
-    function escapeHtml(str) {
-      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
+    function toast(msg, type = 'info') { const cnt = document.getElementById('toast-cnt'); const t = document.createElement('div'); t.className = `toast toast-${type}`; t.innerText = msg; cnt.appendChild(t); setTimeout(() => t.remove(), 4000); }
+    function updateStatusBadge(elemId, status) { const el = document.getElementById(elemId); if (!el) return; const s = (status || 'NOT_STARTED').toLowerCase(); el.className = `badge badge-${s}`; el.innerHTML = `<span class="dot"></span> ${status || 'NOT_STARTED'}`; }
+    function escapeHtml(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function handleDragOver(e) { e.preventDefault(); document.getElementById('photo-area').classList.add('drag-over'); }
+    function handleDrop(e) { e.preventDefault(); document.getElementById('photo-area').classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) handlePhotoSelectDirect(f); }
+    function handlePhotoSelectDirect(file) { compressImage(file, 800, 0.8, b64 => { selectedPhotoBase64 = b64; const prev = document.getElementById('photo-preview'); prev.src = b64; prev.classList.remove('hidden'); document.getElementById('photo-placeholder').classList.add('hidden'); }); }
   </script>
 </body>
 

@@ -1,4 +1,4 @@
-// api/candidates.js — Candidate CRUD Endpoint with Versioning & Fast Add
+// api/candidates.js — Candidate CRUD Endpoint (Without pair_image_file_id column dependency)
 import { getSupabaseAdmin } from '../lib/supabase.js';
 
 export default async function handler(req, res) {
@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const { data: candidates, error } = await supabase
         .from('candidates')
-        .select('id, number, chairman, vice, pair_image_url, pair_image_file_id, active, created_at')
+        .select('id, number, chairman, vice, pair_image_url, active, created_at')
         .order('number', { ascending: true });
 
       if (error) throw error;
@@ -29,7 +29,6 @@ export default async function handler(req, res) {
         chairman: c.chairman,
         vice: c.vice,
         pairImageUrl: c.pair_image_url || '',
-        pairImageFileId: c.pair_image_file_id || '',
         active: c.active,
         createdAt: c.created_at
       }));
@@ -54,7 +53,7 @@ export default async function handler(req, res) {
       };
 
       if (action === 'add') {
-        const { number, chairman, vice, pairImageUrl, pairImageFileId } = candidate || {};
+        const { number, chairman, vice, pairImageUrl } = candidate || {};
         const { data: inserted, error } = await supabase
           .from('candidates')
           .insert({
@@ -62,7 +61,6 @@ export default async function handler(req, res) {
             chairman: chairman,
             vice: vice,
             pair_image_url: pairImageUrl || '',
-            pair_image_file_id: pairImageFileId || '',
             active: true
           })
           .select()
@@ -71,7 +69,6 @@ export default async function handler(req, res) {
         if (error) throw error;
         const newVer = await bumpVersion();
 
-        // Return ONLY the new candidate object (FAST ADD payload!)
         return res.status(200).json({
           success: true,
           message: 'Pasangan calon berhasil ditambahkan!',
@@ -89,16 +86,19 @@ export default async function handler(req, res) {
       }
 
       if (action === 'update') {
-        const { id, number, chairman, vice, pairImageUrl, pairImageFileId } = candidate || {};
+        const { id, number, chairman, vice, pairImageUrl } = candidate || {};
+        const updateData = {
+          number: number,
+          chairman: chairman,
+          vice: vice
+        };
+        if (pairImageUrl !== undefined) {
+          updateData.pair_image_url = pairImageUrl;
+        }
+
         const { data: updated, error } = await supabase
           .from('candidates')
-          .update({
-            number: number,
-            chairman: chairman,
-            vice: vice,
-            pair_image_url: pairImageUrl || '',
-            pair_image_file_id: pairImageFileId || ''
-          })
+          .update(updateData)
           .eq('id', id)
           .select()
           .single();
@@ -109,6 +109,26 @@ export default async function handler(req, res) {
         return res.status(200).json({
           success: true,
           message: 'Pasangan calon diperbarui!',
+          candidate: updated,
+          version: newVer
+        });
+      }
+
+      if (action === 'removeImage') {
+        const { id } = candidate || {};
+        const { data: updated, error } = await supabase
+          .from('candidates')
+          .update({ pair_image_url: '' })
+          .eq('id', id)
+          .select('id, pair_image_url')
+          .single();
+
+        if (error) throw error;
+        const newVer = await bumpVersion();
+
+        return res.status(200).json({
+          success: true,
+          message: 'Foto kandidat berhasil dihapus!',
           candidate: updated,
           version: newVer
         });
