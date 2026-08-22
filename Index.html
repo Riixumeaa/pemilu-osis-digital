@@ -1606,16 +1606,20 @@
       realtimeChannel = supabaseClient
         .channel('station_' + stationId)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `station_id=eq.${stationId}` }, (p) => {
-          if (p.new && p.new.session_id) {
-            currentSessionId = p.new.session_id;
+          if (p.new) {
+            currentSessionId = p.new.session_id || p.new.id || '';
             currentSessionRole = p.new.role || 'peserta';
-            sessionStorage.setItem('pemilu_session_id', currentSessionId);
+            if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
             updateVotingStationUI(p.new.status);
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'auth_requests', filter: `station_id=eq.${stationId}` }, (p) => {
-          if (p.new && p.new.status === 'REJECTED') {
-            updateVotingStationUI('IDLE'); // panitia rejected -> back to idle
+          if (p.new) {
+            if (p.new.status === 'APPROVED') {
+              initVotingStation();
+            } else if (p.new.status === 'REJECTED') {
+              updateVotingStationUI('IDLE');
+            }
           }
         })
         .subscribe();
