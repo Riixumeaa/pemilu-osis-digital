@@ -40,12 +40,16 @@ export default async function handler(req, res) {
         .update({ status: 'REJECTED', updated_at: new Date().toISOString() })
         .eq('station_id', stationId).eq('status', 'PENDING');
 
-      const { data: req_row, error } = await supabase.from('auth_requests')
+      const { data: req_rows, error } = await supabase.from('auth_requests')
         .insert({ station_id: stationId, status: 'PENDING', role: 'peserta' })
-        .select('id, station_id, status, role').single();
+        .select('id, station_id, status, role');
 
-      if (error) throw error;
-      return res.status(200).json({ success: true, requestId: req_row.id, stationId, message: 'Permintaan autentikasi dikirim.' });
+      if (error || !req_rows?.[0]) {
+        console.error('Auth request insert error:', error);
+        return res.status(500).json({ success: false, message: error?.message || 'Gagal membuat permintaan autentikasi.' });
+      }
+
+      return res.status(200).json({ success: true, requestId: req_rows[0].id, stationId, message: 'Permintaan autentikasi dikirim.' });
     }
 
     // GET: all pending auth requests (for dashboard)
@@ -63,11 +67,15 @@ export default async function handler(req, res) {
       const { requestId, role } = req.body || {};
       if (!requestId) return res.status(400).json({ success: false, message: 'requestId required' });
 
-      const { data: authReq } = await supabase
-        .from('auth_requests').select('station_id').eq('id', requestId).single();
-      if (!authReq) return res.status(404).json({ success: false, message: 'Auth request not found' });
+      const { data: authReqs, error: fetchErr } = await supabase
+        .from('auth_requests').select('station_id').eq('id', requestId);
 
-      const targetStation = authReq.station_id;
+      if (fetchErr || !authReqs?.[0]) {
+        console.error('Auth request fetch error:', fetchErr);
+        return res.status(404).json({ success: false, message: 'Permintaan autentikasi tidak ditemukan.' });
+      }
+
+      const targetStation = authReqs[0].station_id;
       const approvedRole = role || 'peserta';
       const multiplier = await getVoteMultiplier(approvedRole, supabase);
 
@@ -77,9 +85,16 @@ export default async function handler(req, res) {
         .eq('id', requestId);
 
       // Create an ACTIVE session for the station
-      const { data: newSession } = await supabase.from('sessions')
+      const { data: newSessions, error: sessErr } = await supabase.from('sessions')
         .insert({ station_id: targetStation, status: 'ACTIVE', role: approvedRole, vote_multiplier: multiplier })
-        .select('session_id, station_id, status, role, vote_multiplier').single();
+        .select('session_id, station_id, status, role, vote_multiplier');
+
+      if (sessErr || !newSessions?.[0]) {
+        console.error('Session insert error during approve:', sessErr);
+        return res.status(500).json({ success: false, message: sessErr?.message || 'Gagal membuat sesi voting baru untuk station ini.' });
+      }
+
+      const newSession = newSessions[0];
 
       return res.status(200).json({
         success: true,
@@ -117,9 +132,16 @@ export default async function handler(req, res) {
       const targetRole = role || 'peserta';
       const multiplier = await getVoteMultiplier(targetRole, supabase);
 
-      const { data: newSession } = await supabase.from('sessions')
+      const { data: newSessions, error: sessErr } = await supabase.from('sessions')
         .insert({ station_id: stationId, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier })
-        .select('session_id, station_id, status, role, vote_multiplier').single();
+        .select('session_id, station_id, status, role, vote_multiplier');
+
+      if (sessErr || !newSessions?.[0]) {
+        console.error('Session insert error during next:', sessErr);
+        return res.status(500).json({ success: false, message: sessErr?.message || 'Gagal membuat sesi voting baru.' });
+      }
+
+      const newSession = newSessions[0];
 
       return res.status(200).json({
         success: true,
