@@ -8,6 +8,34 @@ async function getVoteMultiplier(role, supabase) {
   return parseInt(data?.value || '1') || 1;
 }
 
+async function insertSession(supabase, payload) {
+  const uuid = randomUUID();
+  // Attempt 1: session_id
+  let { data, error } = await supabase.from('sessions')
+    .insert({ ...payload, session_id: uuid })
+    .select('*');
+
+  // Attempt 2: fallback to 'id' if session_id is not in schema cache
+  if (error && (error.message.includes('schema cache') || error.message.includes('column'))) {
+    const res2 = await supabase.from('sessions')
+      .insert({ ...payload, id: uuid })
+      .select('*');
+    data = res2.data;
+    error = res2.error;
+  }
+
+  // Attempt 3: fallback without explicit PK
+  if (error) {
+    const res3 = await supabase.from('sessions')
+      .insert(payload)
+      .select('*');
+    data = res3.data;
+    error = res3.error;
+  }
+
+  return { data, error };
+}
+
 export default async function handler(req, res) {
   const supabase = getSupabaseAdmin();
   const action = req.query.action || (req.body && req.body.action) || 'get';
@@ -85,10 +113,10 @@ export default async function handler(req, res) {
         .update({ status: 'APPROVED', role: approvedRole, updated_at: new Date().toISOString() })
         .eq('id', requestId);
 
-      // Create an ACTIVE session for the station
-      const { data: newSessions, error: sessErr } = await supabase.from('sessions')
-        .insert({ session_id: randomUUID(), station_id: targetStation, status: 'ACTIVE', role: approvedRole, vote_multiplier: multiplier })
-        .select('*');
+      // Create an ACTIVE session for the station using adaptive helper
+      const { data: newSessions, error: sessErr } = await insertSession(supabase, {
+        station_id: targetStation, status: 'ACTIVE', role: approvedRole, vote_multiplier: multiplier
+      });
 
       if (sessErr || !newSessions?.[0]) {
         console.error('Session insert error during approve:', sessErr);
@@ -134,9 +162,9 @@ export default async function handler(req, res) {
       const targetRole = role || 'peserta';
       const multiplier = await getVoteMultiplier(targetRole, supabase);
 
-      const { data: newSessions, error: sessErr } = await supabase.from('sessions')
-        .insert({ session_id: randomUUID(), station_id: stationId, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier })
-        .select('*');
+      const { data: newSessions, error: sessErr } = await insertSession(supabase, {
+        station_id: stationId, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier
+      });
 
       if (sessErr || !newSessions?.[0]) {
         console.error('Session insert error during next:', sessErr);
@@ -167,7 +195,7 @@ export default async function handler(req, res) {
         // Terminate current active session
         await supabase.from('sessions').update({ status: 'COMPLETED' }).eq('station_id', st).eq('status', 'ACTIVE');
         // Create new active session with new role
-        await supabase.from('sessions').insert({ session_id: randomUUID(), station_id: st, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier });
+        await insertSession(supabase, { station_id: st, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier });
       }
       return res.status(200).json({ success: true, message: `Semua station diubah ke sesi: ${targetRole}` });
     }
