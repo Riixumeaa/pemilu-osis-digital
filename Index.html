@@ -1804,23 +1804,39 @@
         const stCnt = document.getElementById('dash-stations');
         if (data.stations?.length) {
           const roleLabels = { peserta: '🎓 Peserta', panitia: '📋 Panitia', guru: '👩‍🏫 Guru' };
-          stCnt.innerHTML = data.stations.map(st => `
-            <div class="station-card s-${st.status.toLowerCase()}">
-              <div style="font-weight:800;font-size:1.1rem">${st.stationId}</div>
-              <div class="badge badge-${st.status === 'ACTIVE' ? 'running' : st.status === 'VOTED' ? 'finished' : 'not_started'}">
-                <span class="dot"></span> ${st.status === 'ACTIVE' ? 'MEMILIH' : st.status === 'VOTED' ? '✓ SELESAI' : st.status === 'WAITING' ? 'MENUNGGU AUTH' : 'SIAP'}
+          stCnt.innerHTML = data.stations.map(st => {
+            const isVoted = st.status === 'VOTED' || st.status === 'COMPLETED';
+            const isActive = st.status === 'ACTIVE';
+            return `
+            <div class="station-card ${isActive ? 's-active' : isVoted ? 's-voted' : 's-waiting'}">
+              <div style="font-weight:800;font-size:1.15rem">${st.stationId}</div>
+              <div class="badge ${isActive ? 'badge-running' : isVoted ? 'badge-finished' : 'badge-not_started'}">
+                <span class="dot"></span> ${isActive ? '🟢 SEDANG MEMILIH' : isVoted ? '✓ PEMILIHAN SELESAI' : '🟡 MENUNGGU PANITIA'}
               </div>
               <div class="tsm cmuted">${roleLabels[st.role || 'peserta'] || st.role} (×${st.voteMultiplier || 1})</div>
-              <div class="flex gap-sm" style="width:100%;flex-wrap:wrap">
-                <select id="role-sel-${st.stationId}" class="fselect" style="flex:1;font-size:.75rem;padding:.3rem">
-                  <option value="peserta" ${st.role === 'peserta' ? 'selected' : ''}>🎓 Peserta</option>
-                  <option value="panitia" ${st.role === 'panitia' ? 'selected' : ''}>📋 Panitia</option>
-                  <option value="guru" ${st.role === 'guru' ? 'selected' : ''}>👩‍🏫 Guru</option>
-                </select>
-                <button class="btn btn-primary btn-sm" onclick="nextVoter('${st.stationId}')">➡️ Berikutnya</button>
-                <button class="btn btn-error btn-sm" onclick="disconnectStation('${st.stationId}')">✕</button>
+              
+              ${isVoted ? `
+                <div style="font-size:.8rem;color:var(--green);font-weight:600;margin:.2rem 0">🖐 Peserta melakukan cap jari</div>
+                <button class="btn btn-success btn-sm btn-block" onclick="nextVoter('${st.stationId}')">➡️ PESERTA BERIKUTNYA</button>
+              ` : isActive ? `
+                <div style="font-size:.8rem;color:var(--blue);font-weight:600;margin:.2rem 0">Proses pemilihan berlangsung</div>
+                <button class="btn btn-ghost btn-sm btn-block" onclick="loadDashStats()">🔍 Lihat Status</button>
+              ` : `
+                <div class="flex gap-sm" style="width:100%;flex-wrap:wrap;margin-top:.2rem">
+                  <select id="role-sel-${st.stationId}" class="fselect" style="flex:1;font-size:.78rem;padding:.3rem">
+                    <option value="peserta">🎓 Peserta</option>
+                    <option value="panitia">📋 Panitia</option>
+                    <option value="guru">👩‍🏫 Guru</option>
+                  </select>
+                  <button class="btn btn-primary btn-sm" onclick="nextVoter('${st.stationId}')">🔓 BUKA BILIK</button>
+                </div>
+              `}
+              
+              <div style="margin-top:.3rem">
+                <button class="btn btn-ghost btn-sm" style="font-size:.7rem;color:var(--muted)" onclick="disconnectStation('${st.stationId}')">✕ Putuskan Sesi</button>
               </div>
-            </div>`).join('');
+            </div>`;
+          }).join('');
         } else stCnt.innerHTML = '<div class="empty" style="grid-column:1/-1"><p>Belum ada station aktif.</p></div>';
 
         const brCnt = document.getElementById('dash-breakdown');
