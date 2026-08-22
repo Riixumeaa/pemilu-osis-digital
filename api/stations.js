@@ -1,97 +1,63 @@
-const { getSupabase } = require('../lib/supabase');
-const { updateStationSessionSheet } = require('../lib/googleSheets');
+// api/stations.js — Multi-Station Session Controller Endpoint
+import { getSupabaseAdmin } from '../lib/supabase.js';
 
-// In-memory fallback
-const localSessions = new Map();
+export default async function handler(req, res) {
+  const { action, stationId } = req.query;
+  const targetStation = stationId || (req.body && req.body.stationId) || 'STATION-01';
+  const supabase = getSupabaseAdmin();
 
-function getParams(req) {
   try {
-    const u = new URL(req.url, 'http://localhost');
-    const p = {};
-    u.searchParams.forEach((v, k) => { p[k] = v; });
-    return Object.assign({}, p, req.query || {});
-  } catch(e) {
-    return req.query || {};
-  }
-}
-
-module.exports = async (req, res) => {
-  const supabase = getSupabase();
-  const query = getParams(req);
-  const action = query.action || (req.body && req.body.action) || 'register';
-  const stationId = query.stationId || (req.body && req.body.stationId) || 'Station 1';
-
-  if (action === 'register') {
-    let status = 'READY';
-    if (supabase) {
-      const { data } = await supabase
+    // 1. Get current active session for station (Session recovery on browser refresh)
+    if (action === 'get' || !action) {
+      const { data: sessions, error } = await supabase
         .from('sessions')
-        .select('*')
-        .eq('station_id', stationId)
+        .select('session_id, station_id, status, created_at, voted_at')
+        .eq('station_id', targetStation)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      const latest = sessions && sessions.length > 0 ? sessions[0] : null;
+      return res.status(200).json({
+        success: true,
+        stationId: targetStation,
+        sessionId: latest ? latest.session_id : null,
+        status: latest ? latest.status : 'WAITING'
+      });
+    }
+
+    // 2. Panitia creates new session for station ("PESERTA BERIKUTNYA")
+    if (action === 'next' || action === 'register' || action === 'create') {
+      const { data: newSession, error } = await supabase
+        .from('sessions')
+        .insert({
+          station_id: targetStation,
+          status: 'ACTIVE'
+        })
+        .select('session_id, station_id, status')
         .single();
 
-      if (data) {
-        status = data.status;
-      } else {
-        await supabase
-          .from('sessions')
-          .insert([{ station_id: stationId, status: 'READY' }]);
-      }
-    } else {
-      status = localSessions.get(stationId) || 'READY';
-      if (!localSessions.has(stationId)) localSessions.set(stationId, 'READY');
+      if (error) throw error;
+
+      return res.status(200).json({
+        success: true,
+        stationId: targetStation,
+        sessionId: newSession.session_id,
+        status: 'ACTIVE',
+        message: `${targetStation} siap untuk peserta berikutnya!`
+      });
     }
 
-    return res.status(200).json({ success: true, stationId, status });
-  }
-
-  if (action === 'next') {
-    if (supabase) {
-      await supabase
-        .from('sessions')
-        .upsert({ station_id: stationId, status: 'READY', updated_at: new Date().toISOString() });
-    } else {
-      localSessions.set(stationId, 'READY');
+    // 3. Reset all station sessions
+    if (action === 'resetAll') {
+      await supabase.from('sessions').delete().neq('station_id', 'NON_EXISTENT');
+      return res.status(200).json({ success: true, message: 'Semua sesi station telah di-reset!' });
     }
-    updateStationSessionSheet(stationId, 'READY').catch(() => {});
-    return res.status(200).json({ success: true, message: `${stationId} siap!` });
-  }
 
-  if (action === 'delete') {
-    if (supabase) {
-      await supabase.from('sessions').delete().eq('station_id', stationId);
-    } else {
-      localSessions.delete(stationId);
-    }
-    return res.status(200).json({ success: true, message: `${stationId} dihapus!` });
+    return res.status(400).json({ success: false, message: 'Action tidak valid.' });
+  } catch (err) {
+    console.error('Stations API Error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Server error' });
   }
-
-  if (action === 'resetAll') {
-    if (supabase) {
-      await supabase
-        .from('sessions')
-        .update({ status: 'READY', updated_at: new Date().toISOString() })
-        .neq('station_id', '');
-    } else {
-      for (const k of localSessions.keys()) localSessions.set(k, 'READY');
-    }
-    return res.status(200).json({ success: true, message: 'Semua bilik di-reset!' });
-  }
-
-  if (action === 'all') {
-    let stations = [];
-    if (supabase) {
-      const { data } = await supabase.from('sessions').select('*');
-      if (data) {
-        stations = data.map(d => ({ stationId: d.station_id, status: d.status, updatedAt: d.updated_at }));
-      }
-    } else {
-      for (const [k, v] of localSessions.entries()) {
-        stations.push({ stationId: k, status: v });
-      }
-    }
-    return res.status(200).json({ success: true, stations });
-  }
-
-  res.status(400).json({ success: false, message: 'Invalid action' });
-};
+}

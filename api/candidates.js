@@ -1,108 +1,157 @@
-const { getSupabase } = require('../lib/supabase');
-const { syncCandidateToSheet } = require('../lib/googleSheets');
+// api/candidates.js — Candidate CRUD Endpoint with Versioning & Fast Add
+import { getSupabaseAdmin } from '../lib/supabase.js';
 
-// In-memory fallback if Supabase not configured yet
-let localCandidates = [
-  { id: '1', number: 1, chairman: 'Calon Ketua 1', vice: 'Calon Wakil 1', pairImageUrl: '', active: true },
-  { id: '2', number: 2, chairman: 'Calon Ketua 2', vice: 'Calon Wakil 2', pairImageUrl: '', active: true }
-];
+export default async function handler(req, res) {
+  const supabase = getSupabaseAdmin();
 
-module.exports = async (req, res) => {
-  const supabase = getSupabase();
-
-  if (req.method === 'GET') {
-    if (supabase) {
-      const { data, error } = await supabase
+  try {
+    // GET: Fetch candidates with CANDIDATE_VERSION
+    if (req.method === 'GET') {
+      const { data: candidates, error } = await supabase
         .from('candidates')
-        .select('*')
+        .select('id, number, chairman, vice, pair_image_url, pair_image_file_id, active, created_at')
         .order('number', { ascending: true });
 
-      if (!error && data) {
-        const formatted = data.map(c => ({
-          id: c.id,
-          number: c.number,
-          chairman: c.chairman,
-          vice: c.vice,
-          pairImageUrl: c.pair_image_url || '',
-          active: c.active,
-          createdAt: c.created_at
-        }));
-        return res.status(200).json({ success: true, candidates: formatted });
-      }
+      if (error) throw error;
+
+      // Get current candidate version from settings
+      const { data: settingData } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'CANDIDATE_VERSION')
+        .single();
+
+      const version = settingData ? settingData.value : '1';
+
+      const formatted = (candidates || []).map(c => ({
+        id: c.id,
+        number: c.number,
+        chairman: c.chairman,
+        vice: c.vice,
+        pairImageUrl: c.pair_image_url || '',
+        pairImageFileId: c.pair_image_file_id || '',
+        active: c.active,
+        createdAt: c.created_at
+      }));
+
+      return res.status(200).json({
+        success: true,
+        candidates: formatted,
+        version: version
+      });
     }
-    return res.status(200).json({ success: true, candidates: localCandidates });
-  }
 
-  if (req.method === 'POST') {
-    const { action, candidate } = req.body || {};
+    // POST: Candidate CRUD mutations
+    if (req.method === 'POST') {
+      const { action, candidate } = req.body || {};
 
-    if (action === 'add') {
-      const newCand = {
-        number: Number(candidate.number),
-        chairman: candidate.chairman,
-        vice: candidate.vice,
-        pair_image_url: candidate.pairImageUrl || '',
-        active: true
+      // Function to increment candidate version in settings
+      const bumpVersion = async () => {
+        const { data: current } = await supabase.from('settings').select('value').eq('key', 'CANDIDATE_VERSION').single();
+        const nextVer = String((parseInt(current ? current.value : '1') || 1) + 1);
+        await supabase.from('settings').upsert({ key: 'CANDIDATE_VERSION', value: nextVer, updated_at: new Date().toISOString() });
+        return nextVer;
       };
 
-      if (supabase) {
-        const { data, error } = await supabase.from('candidates').insert([newCand]).select();
-        if (error) return res.status(500).json({ success: false, message: error.message });
-        if (data && data[0]) newCand.id = data[0].id;
-      } else {
-        newCand.id = String(Date.now());
-        localCandidates.push(newCand);
+      if (action === 'add') {
+        const { number, chairman, vice, pairImageUrl, pairImageFileId } = candidate || {};
+        const { data: inserted, error } = await supabase
+          .from('candidates')
+          .insert({
+            number: number,
+            chairman: chairman,
+            vice: vice,
+            pair_image_url: pairImageUrl || '',
+            pair_image_file_id: pairImageFileId || '',
+            active: true
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        const newVer = await bumpVersion();
+
+        // Return ONLY the new candidate object (FAST ADD payload!)
+        return res.status(200).json({
+          success: true,
+          message: 'Pasangan calon berhasil ditambahkan!',
+          candidate: {
+            id: inserted.id,
+            number: inserted.number,
+            chairman: inserted.chairman,
+            vice: inserted.vice,
+            pairImageUrl: inserted.pair_image_url || '',
+            active: inserted.active,
+            createdAt: inserted.created_at
+          },
+          version: newVer
+        });
       }
 
-      // Sync candidate and photo to Google Sheets CANDIDATES sheet
-      syncCandidateToSheet(newCand).catch(() => {});
-
-      return res.status(200).json({ success: true, message: 'Pasangan calon ditambahkan!' });
-    }
-
-    if (action === 'update') {
-      if (supabase) {
-        await supabase
+      if (action === 'update') {
+        const { id, number, chairman, vice, pairImageUrl, pairImageFileId } = candidate || {};
+        const { data: updated, error } = await supabase
           .from('candidates')
           .update({
-            number: Number(candidate.number),
-            chairman: candidate.chairman,
-            vice: candidate.vice,
-            pair_image_url: candidate.pairImageUrl
+            number: number,
+            chairman: chairman,
+            vice: vice,
+            pair_image_url: pairImageUrl || '',
+            pair_image_file_id: pairImageFileId || ''
           })
-          .eq('id', candidate.id);
+          .eq('id', id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        const newVer = await bumpVersion();
+
+        return res.status(200).json({
+          success: true,
+          message: 'Pasangan calon diperbarui!',
+          candidate: updated,
+          version: newVer
+        });
       }
 
-      syncCandidateToSheet(candidate).catch(() => {});
+      if (action === 'toggle') {
+        const { id, active } = candidate || {};
+        const { data: updated, error } = await supabase
+          .from('candidates')
+          .update({ active: active })
+          .eq('id', id)
+          .select('id, active')
+          .single();
 
-      return res.status(200).json({ success: true, message: 'Data kandidat diperbarui!' });
-    }
+        if (error) throw error;
+        const newVer = await bumpVersion();
 
-    if (action === 'toggle') {
-      if (supabase) {
-        await supabase.from('candidates').update({ active: candidate.active }).eq('id', candidate.id);
-      } else {
-        const found = localCandidates.find(c => String(c.id) === String(candidate.id));
-        if (found) found.active = candidate.active;
+        return res.status(200).json({
+          success: true,
+          message: 'Status kandidat diubah!',
+          candidate: updated,
+          version: newVer
+        });
       }
-      return res.status(200).json({ success: true, message: 'Status kandidat diubah!' });
-    }
 
-    if (action === 'uploadPhoto') {
-      // Return the base64 photo directly or store in bucket
-      const base64Data = req.body.base64Data || '';
-      return res.status(200).json({ success: true, url: base64Data });
-    }
+      if (action === 'delete') {
+        const { id } = candidate || {};
+        const { error } = await supabase.from('candidates').delete().eq('id', id);
+        if (error) throw error;
+        const newVer = await bumpVersion();
 
-    if (action === 'delete') {
-      if (supabase) {
-        await supabase.from('candidates').delete().eq('id', candidate.id);
-      } else {
-        localCandidates = localCandidates.filter(c => String(c.id) !== String(candidate.id));
+        return res.status(200).json({
+          success: true,
+          message: 'Pasangan calon dihapus!',
+          id: id,
+          version: newVer
+        });
       }
-      return res.status(200).json({ success: true, message: 'Pasangan calon dihapus!' });
     }
+
+    return res.status(400).json({ success: false, message: 'Action tidak valid.' });
+  } catch (err) {
+    console.error('Candidates API Error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Server error' });
   }
-
-  res.status(400).json({ success: false, message: 'Invalid request' });
-};
+}

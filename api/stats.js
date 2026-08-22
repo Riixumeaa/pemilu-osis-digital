@@ -1,123 +1,85 @@
-const { getSupabase } = require('../lib/supabase');
+// api/stats.js — Aggregated Statistics API Endpoint (Low Egress!)
+import { getSupabaseAdmin } from '../lib/supabase.js';
 
-function getParams(req) {
+export default async function handler(req, res) {
+  const supabase = getSupabaseAdmin();
+
   try {
-    const u = new URL(req.url, 'http://localhost');
-    const p = {};
-    u.searchParams.forEach((v, k) => { p[k] = v; });
-    return Object.assign({}, p, req.query || {});
-  } catch(e) {
-    return req.query || {};
-  }
-}
+    // 1. Fetch Candidates List
+    const { data: candidates, error: candError } = await supabase
+      .from('candidates')
+      .select('id, number, chairman, vice')
+      .order('number', { ascending: true });
 
-module.exports = async (req, res) => {
-  const supabase = getSupabase();
-  const query = getParams(req);
-  const type = query.type;
+    if (candError) throw candError;
 
-  let candidates = [
-    { id: '1', number: 1, chairman: 'Calon Ketua 1', vice: 'Calon Wakil 1' },
-    { id: '2', number: 2, chairman: 'Calon Ketua 2', vice: 'Calon Wakil 2' }
-  ];
-  let votes = [];
-  let stations = [];
-  let electionStatus = 'RUNNING';
-  let electionTitle = process.env.ELECTION_TITLE || 'PEMILU OSIS DIGITAL';
-  let startTime = '';
-  let endTime = '';
+    // 2. Aggregate Votes per Candidate (No SELECT * FROM votes!)
+    const { data: votesData, error: voteError } = await supabase
+      .from('votes')
+      .select('candidate_id');
 
-  if (supabase) {
-    const [candsRes, votesRes, stationsRes, settingsRes] = await Promise.all([
-      supabase.from('candidates').select('*').order('number', { ascending: true }),
-      supabase.from('votes').select('*'),
-      supabase.from('sessions').select('*'),
-      supabase.from('settings').select('*')
-    ]);
+    if (voteError) throw voteError;
 
-    if (candsRes.data) {
-      candidates = candsRes.data.map(c => ({
+    const totalVotes = votesData ? votesData.length : 0;
+    const counts = {};
+
+    (candidates || []).forEach(c => { counts[c.id] = 0; });
+    (votesData || []).forEach(v => {
+      if (counts[v.candidate_id] !== undefined) {
+        counts[v.candidate_id]++;
+      }
+    });
+
+    const breakdown = (candidates || []).map(c => {
+      const count = counts[c.id] || 0;
+      const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 1000) / 10 : 0;
+      return {
         id: c.id,
         number: c.number,
         chairman: c.chairman,
-        vice: c.vice
-      }));
-    }
-    if (votesRes.data) votes = votesRes.data;
-    if (stationsRes.data) {
-      stations = stationsRes.data.map(s => ({
-        stationId: s.station_id,
-        status: s.status,
-        updatedAt: s.updated_at
-      }));
-    }
-    if (settingsRes.data) {
-      const st = settingsRes.data.find(s => s.key === 'ELECTION_STATUS');
-      const tt = settingsRes.data.find(s => s.key === 'ELECTION_TITLE');
-      const stt = settingsRes.data.find(s => s.key === 'START_TIME');
-      const et = settingsRes.data.find(s => s.key === 'END_TIME');
-      if (st) electionStatus = st.value;
-      if (tt) electionTitle = tt.value;
-      if (stt) startTime = stt.value;
-      if (et) endTime = et.value;
-    }
-  }
+        vice: c.vice,
+        votes: count,
+        percentage: pct
+      };
+    });
 
-  const counts = {};
-  let totalVotes = votes.length;
-  candidates.forEach(c => { counts[c.id] = 0; });
+    // 3. Fetch Election Settings & Station Statuses
+    const { data: settings } = await supabase.from('settings').select('key, value');
+    const settingsMap = {};
+    (settings || []).forEach(s => { settingsMap[s.key] = s.value; });
 
-  votes.forEach(v => {
-    const cid = String(v.candidate_id);
-    if (counts[cid] !== undefined) counts[cid]++;
-  });
+    // Fetch latest sessions per station
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('session_id, station_id, status, created_at, voted_at')
+      .order('created_at', { ascending: false });
 
-  const breakdown = candidates.map(cand => {
-    const count = counts[cand.id] || 0;
-    const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 1000) / 10 : 0;
-    return {
-      id: cand.id,
-      number: cand.number,
-      chairman: cand.chairman,
-      vice: cand.vice,
-      votes: count,
-      percentage: pct
-    };
-  });
+    const stationMap = {};
+    (sessions || []).forEach(s => {
+      if (!stationMap[s.station_id]) {
+        stationMap[s.station_id] = {
+          sessionId: s.session_id,
+          stationId: s.station_id,
+          status: s.status,
+          createdAt: s.created_at,
+          votedAt: s.voted_at
+        };
+      }
+    });
 
-  if (type === 'admin') {
+    const stations = Object.keys(stationMap).sort().map(k => stationMap[k]);
+
     return res.status(200).json({
       success: true,
-      totalVotes,
-      totalSessions: stations.length,
-      totalCandidates: candidates.length,
-      electionStatus,
-      title: electionTitle,
-      startTime,
-      endTime
+      totalVotes: totalVotes,
+      breakdown: breakdown,
+      electionStatus: settingsMap['STATUS'] || 'NOT_STARTED',
+      title: settingsMap['TITLE'] || 'PEMILU OSIS DIGITAL',
+      candidateVersion: settingsMap['CANDIDATE_VERSION'] || '1',
+      stations: stations
     });
+  } catch (err) {
+    console.error('Stats API Error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Server error' });
   }
-
-  if (type === 'logs') {
-    let logs = [
-      { timestamp: new Date().toISOString(), type: 'SYSTEM', message: 'Sistem Vercel & Supabase berjalan', data: '' }
-    ];
-    if (supabase) {
-      const { data } = await supabase.from('logs').select('*').order('timestamp', { ascending: false }).limit(100);
-      if (data && data.length) {
-        logs = data.map(l => ({ timestamp: l.timestamp, type: l.type, message: l.message, data: l.data }));
-      }
-    }
-    return res.status(200).json({ success: true, logs });
-  }
-
-  return res.status(200).json({
-    success: true,
-    totalVotes,
-    breakdown,
-    electionStatus,
-    title: electionTitle,
-    stations
-  });
-};
-
+}

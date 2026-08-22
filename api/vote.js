@@ -1,54 +1,36 @@
-const { getSupabase } = require('../lib/supabase');
-const { appendVoteToSheet, updateStationSessionSheet } = require('../lib/googleSheets');
+// api/vote.js — Low-Egress Submit Vote API Endpoint
+import { getSupabaseAdmin } from '../lib/supabase.js';
 
-// In-memory fallback
-const localVotes = [];
-const localSessions = new Map();
-
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, message: 'Method not allowed' });
+    return res.status(405).json({ success: false, message: 'Method Not Allowed' });
   }
 
-  const { stationId, candidateId } = req.body || {};
-  if (!candidateId) {
-    return res.status(400).json({ success: false, message: 'Kandidat belum dipilih.' });
+  const { sessionId, stationId, candidateId } = req.body || {};
+
+  if (!sessionId || !candidateId) {
+    return res.status(400).json({ success: false, message: 'sessionId dan candidateId wajib diisi.' });
   }
 
-  const st = stationId || 'Station 1';
-  const supabase = getSupabase();
-  const voteId = crypto.randomUUID();
-  const now = new Date().toISOString();
+  try {
+    const supabase = getSupabaseAdmin();
 
-  if (supabase) {
-    // Record vote & update station status concurrently for ultra-fast < 15ms DB response!
-    await Promise.all([
-      supabase.from('votes').insert([{
-        id: voteId,
-        candidate_id: String(candidateId),
-        station_id: st,
-        session_token: 'NO_TOKEN',
-        voted_at: now
-      }]),
-      supabase.from('sessions').upsert({
-        station_id: st,
-        status: 'VOTED',
-        updated_at: now
-      })
-    ]);
-  } else {
-    localVotes.push({ id: voteId, candidateId: String(candidateId), stationId: st, votedAt: now });
-    localSessions.set(st, 'VOTED');
+    // Execute atomic RPC function submit_vote in PostgreSQL
+    const { data, error } = await supabase.rpc('submit_vote', {
+      p_session_id: sessionId,
+      p_station_id: stationId || 'STATION-01',
+      p_candidate_id: candidateId
+    });
+
+    if (error) {
+      console.error('Supabase RPC Vote Error:', error);
+      return res.status(500).json({ success: false, message: 'Gagal mencatat suara: ' + error.message });
+    }
+
+    // Return minimal response payload (low egress!)
+    return res.status(200).json(data);
+  } catch (err) {
+    console.error('Vote Handler Exception:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Server vote error' });
   }
-
-  // 3. Asynchronously sync to Google Sheets API (background non-blocking)
-  Promise.all([
-    appendVoteToSheet({ id: voteId, candidateId: String(candidateId), stationId: st, votedAt: now }),
-    updateStationSessionSheet(st, 'VOTED')
-  ]).catch(err => console.error('Google Sheets async sync warning:', err.message));
-
-  return res.status(200).json({
-    success: true,
-    message: 'Suara Anda berhasil dicatat!'
-  });
-};
+}
