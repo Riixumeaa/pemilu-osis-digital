@@ -11,26 +11,26 @@ async function getVoteMultiplier(role, supabase) {
 async function insertSession(supabase, payload) {
   const uuid = randomUUID();
 
-  // Attempt 1: try with session_id
-  let res = await supabase.from('sessions')
+  // Try insert with session_id primary key
+  const res1 = await supabase.from('sessions')
     .insert({ ...payload, session_id: uuid })
     .select('*');
 
-  if (!res.error && res.data?.[0]) return res;
+  if (!res1.error) return res1;
 
-  // Attempt 2: try with id
-  res = await supabase.from('sessions')
-    .insert({ ...payload, id: uuid })
-    .select('*');
+  console.error('Session insert attempt with session_id error:', res1.error);
 
-  if (!res.error && res.data?.[0]) return res;
+  // Fallback to 'id' ONLY if session_id is missing from schema cache
+  if (res1.error.message && res1.error.message.includes('session_id') && res1.error.message.includes('schema cache')) {
+    const res2 = await supabase.from('sessions')
+      .insert({ ...payload, id: uuid })
+      .select('*');
+    if (!res2.error) return res2;
+    console.error('Session insert attempt with id error:', res2.error);
+    return res2;
+  }
 
-  // Attempt 3: try with both session_id and id
-  res = await supabase.from('sessions')
-    .insert({ ...payload, session_id: uuid, id: uuid })
-    .select('*');
-
-  return res;
+  return res1;
 }
 
 export default async function handler(req, res) {
