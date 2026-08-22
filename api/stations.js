@@ -10,30 +10,27 @@ async function getVoteMultiplier(role, supabase) {
 
 async function insertSession(supabase, payload) {
   const uuid = randomUUID();
-  // Attempt 1: session_id
-  let { data, error } = await supabase.from('sessions')
+
+  // Attempt 1: try with session_id
+  let res = await supabase.from('sessions')
     .insert({ ...payload, session_id: uuid })
     .select('*');
 
-  // Attempt 2: fallback to 'id' if session_id is not in schema cache
-  if (error && (error.message.includes('schema cache') || error.message.includes('column'))) {
-    const res2 = await supabase.from('sessions')
-      .insert({ ...payload, id: uuid })
-      .select('*');
-    data = res2.data;
-    error = res2.error;
-  }
+  if (!res.error && res.data?.[0]) return res;
 
-  // Attempt 3: fallback without explicit PK
-  if (error) {
-    const res3 = await supabase.from('sessions')
-      .insert(payload)
-      .select('*');
-    data = res3.data;
-    error = res3.error;
-  }
+  // Attempt 2: try with id
+  res = await supabase.from('sessions')
+    .insert({ ...payload, id: uuid })
+    .select('*');
 
-  return { data, error };
+  if (!res.error && res.data?.[0]) return res;
+
+  // Attempt 3: try with both session_id and id
+  res = await supabase.from('sessions')
+    .insert({ ...payload, session_id: uuid, id: uuid })
+    .select('*');
+
+  return res;
 }
 
 export default async function handler(req, res) {
