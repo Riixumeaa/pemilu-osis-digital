@@ -48,20 +48,9 @@ export default async function handler(req, res) {
       .select('*')
       .order('created_at', { ascending: false });
 
-    const { data: authReqs } = await supabase
-      .from('auth_requests')
-      .select('station_id, status, role')
-      .eq('status', 'PENDING');
-
     const stationMap = {};
     (sessions || []).forEach(s => {
       if (!stationMap[s.station_id]) stationMap[s.station_id] = { sessionId: s.session_id || s.id, stationId: s.station_id, status: s.status, role: s.role || 'peserta', voteMultiplier: s.vote_multiplier || 1 };
-    });
-
-    (authReqs || []).forEach(ar => {
-      if (!stationMap[ar.station_id]) {
-        stationMap[ar.station_id] = { sessionId: null, stationId: ar.station_id, status: 'WAITING', role: ar.role || 'peserta', voteMultiplier: 1 };
-      }
     });
 
     return res.status(200).json({

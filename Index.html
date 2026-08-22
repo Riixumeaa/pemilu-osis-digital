@@ -1602,7 +1602,11 @@
     }
 
     function subscribeStationRealtime(stationId) {
-      if (!supabaseClient || realtimeChannel) return;
+      if (!supabaseClient) return;
+      if (realtimeChannel) {
+        try { supabaseClient.removeChannel(realtimeChannel); } catch (e) { }
+        realtimeChannel = null;
+      }
       realtimeChannel = supabaseClient
         .channel('station_' + stationId)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `station_id=eq.${stationId}` }, (p) => {

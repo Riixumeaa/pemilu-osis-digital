@@ -1,5 +1,6 @@
 // api/stations.js — Multi-Station Session & Auth Request Controller
 import { getSupabaseAdmin } from '../lib/supabase.js';
+import { randomUUID } from 'crypto';
 
 async function getVoteMultiplier(role, supabase) {
   const key = `votes_${role || 'peserta'}`;
@@ -86,7 +87,7 @@ export default async function handler(req, res) {
 
       // Create an ACTIVE session for the station
       const { data: newSessions, error: sessErr } = await supabase.from('sessions')
-        .insert({ station_id: targetStation, status: 'ACTIVE', role: approvedRole, vote_multiplier: multiplier })
+        .insert({ session_id: randomUUID(), station_id: targetStation, status: 'ACTIVE', role: approvedRole, vote_multiplier: multiplier })
         .select('*');
 
       if (sessErr || !newSessions?.[0]) {
@@ -134,7 +135,7 @@ export default async function handler(req, res) {
       const multiplier = await getVoteMultiplier(targetRole, supabase);
 
       const { data: newSessions, error: sessErr } = await supabase.from('sessions')
-        .insert({ station_id: stationId, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier })
+        .insert({ session_id: randomUUID(), station_id: stationId, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier })
         .select('*');
 
       if (sessErr || !newSessions?.[0]) {
@@ -166,7 +167,7 @@ export default async function handler(req, res) {
         // Terminate current active session
         await supabase.from('sessions').update({ status: 'COMPLETED' }).eq('station_id', st).eq('status', 'ACTIVE');
         // Create new active session with new role
-        await supabase.from('sessions').insert({ station_id: st, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier });
+        await supabase.from('sessions').insert({ session_id: randomUUID(), station_id: st, status: 'ACTIVE', role: targetRole, vote_multiplier: multiplier });
       }
       return res.status(200).json({ success: true, message: `Semua station diubah ke sesi: ${targetRole}` });
     }
