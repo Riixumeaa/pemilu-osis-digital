@@ -111,10 +111,18 @@ INSERT INTO settings (key, value) VALUES
   ('votes_guru', '1')
 ON CONFLICT (key) DO NOTHING;
 
--- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
-ALTER PUBLICATION supabase_realtime ADD TABLE auth_requests;
-ALTER PUBLICATION supabase_realtime ADD TABLE settings;
+-- Safe Enable Realtime
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'sessions') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'auth_requests') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE auth_requests;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'settings') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE settings;
+  END IF;
+END $$;
 
 -- ================================================================
 -- SUBMIT_VOTE RPC — Atomic with vote_weight support
