@@ -1253,7 +1253,16 @@
         </div>
 
         <div id="tab-hasil" class="tab-content">
-          <div class="flex fxc fxb mb2">
+          <!-- PRINT HEADER (ONLY VISIBLE WHEN PRINTING PDF) -->
+          <div id="print-header" class="print-only"
+            style="display:none;margin-bottom:1.5rem;text-align:center;border-bottom:2px solid #333;padding-bottom:1rem">
+            <h1 id="print-title" style="font-size:1.8rem;margin-bottom:.3rem;color:#000">PEMILU OSIS DIGITAL</h1>
+            <h3 style="font-size:1.1rem;color:#444;margin-bottom:.4rem">LAPORAN HASIL PEROLEHAN SUARA</h3>
+            <p id="print-schedule" style="font-size:.9rem;color:#666;margin-bottom:.2rem">Jadwal: —</p>
+            <p id="print-date" style="font-size:.8rem;color:#888">Dicetak pada: —</p>
+          </div>
+
+          <div class="flex fxc fxb mb2 no-print">
             <div>
               <h2>Hasil Pemilu</h2>
               <p>Perolehan suara semua pasangan</p>
@@ -1265,6 +1274,23 @@
             <div class="flex fxc fxb"><span class="card-title">📊 Total Suara</span><span id="hasil-total"
                 class="stat-val" style="font-size:1.5rem">—</span></div>
           </div>
+
+          <!-- VISUAL PIE / DONUT CHART -->
+          <div id="hasil-chart-wrap" class="card mb2 tc" style="display:none">
+            <h4 class="mb2 cmuted" style="font-size:.85rem;text-transform:uppercase;letter-spacing:1px">Visualisasi
+              Perolehan Suara</h4>
+            <div id="hasil-pie-chart"
+              style="width:170px;height:170px;border-radius:50%;margin:0 auto 1.2rem;box-shadow:var(--shadow-md);position:relative;display:flex;align-items:center;justify-content:center">
+              <div
+                style="width:110px;height:110px;border-radius:50%;background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center">
+                <span id="chart-total-val" style="font-size:1.3rem;font-weight:800;color:var(--text)">0</span>
+                <span style="font-size:.65rem;color:var(--muted);font-weight:600">TOTAL SUARA</span>
+              </div>
+            </div>
+            <div id="chart-legend" style="display:flex;flex-wrap:wrap;justify-content:center;gap:1rem;font-size:.8rem">
+            </div>
+          </div>
+
           <div id="hasil-list">
             <div class="empty">
               <div class="empty-ico">📊</div>
@@ -1609,16 +1635,20 @@
       }
       realtimeChannel = supabaseClient
         .channel('station_' + stationId)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `station_id=eq.${stationId}` }, (p) => {
-          if (p.new) {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, (p) => {
+          if (p.new && p.new.station_id === stationId) {
             currentSessionId = p.new.session_id || p.new.id || '';
             currentSessionRole = p.new.role || 'peserta';
             if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
-            updateVotingStationUI(p.new.status);
+            if (p.new.status === 'COMPLETED' || p.new.status === 'WAITING') {
+              updateVotingStationUI('IDLE');
+            } else {
+              updateVotingStationUI(p.new.status);
+            }
           }
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'auth_requests', filter: `station_id=eq.${stationId}` }, (p) => {
-          if (p.new) {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'auth_requests' }, (p) => {
+          if (p.new && p.new.station_id === stationId) {
             if (p.new.status === 'APPROVED') {
               initVotingStation();
             } else if (p.new.status === 'REJECTED') {
@@ -1968,6 +1998,7 @@
         updateStatusBadge('ov-status', data.electionStatus);
         document.getElementById('ov-title').innerText = data.title;
         document.getElementById('ov-title-input').value = data.title;
+        loadSchedule();
       } catch (e) { }
     }
 
@@ -1976,6 +2007,20 @@
       if (!title) return toast('Judul kosong!', 'warning');
       const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'setTitle', token: adminToken, title }) }).then(r => r.json());
       if (data.success) { toast(data.message, 'success'); loadOverview(); }
+    }
+
+    async function loadSchedule() {
+      try {
+        const data = await fetch('/api/status').then(r => r.json());
+        if (data.startTime) {
+          const sDate = new Date(data.startTime);
+          document.getElementById('sched-start').value = new Date(sDate.getTime() - sDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        }
+        if (data.endTime) {
+          const eDate = new Date(data.endTime);
+          document.getElementById('sched-end').value = new Date(eDate.getTime() - eDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        }
+      } catch (e) { }
     }
 
     async function loadVoteConfig() {
@@ -2010,7 +2055,7 @@
       btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
       const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'schedule', token: adminToken, startTime: new Date(start).toISOString(), endTime: new Date(end).toISOString() }) }).then(r => r.json());
       btn.disabled = false; btn.innerHTML = '💾 Simpan Jadwal';
-      if (data.success) toast(data.message, 'success');
+      if (data.success) { toast(data.message, 'success'); loadOverview(); }
       else toast(data.message || 'Gagal simpan jadwal.', 'error');
     }
 
@@ -2025,6 +2070,7 @@
           ${c.pairImageUrl ? `<img src="${c.pairImageUrl}" style="width:50px;height:50px;border-radius:6px;object-fit:cover">` : ''}
           <div class="cand-info"><div class="cand-name">${escapeHtml(c.chairman)} &amp; ${escapeHtml(c.vice)}</div><div class="cand-vice">${c.active ? '🟢 Aktif' : '🔴 Non-Aktif'}</div></div>
           <div class="cand-actions">
+            <button class="btn btn-sm btn-primary" onclick="openEditCandModal('${c.id}')">✏️ Edit</button>
             ${c.pairImageUrl ? `<button class="btn btn-sm btn-warning" onclick="removeCandPhoto('${c.id}')">Hapus Foto</button>` : ''}
             <button class="btn btn-sm btn-ghost" onclick="toggleCandActive('${c.id}',${!c.active})">${c.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
             <button class="btn btn-sm btn-error" onclick="deleteCand('${c.id}')">Hapus</button>
@@ -2038,6 +2084,27 @@
       ['cand-number', 'cand-chairman', 'cand-vice'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('photo-preview').classList.add('hidden');
       document.getElementById('photo-placeholder').classList.remove('hidden');
+      selectedPhotoBase64 = null;
+      openModal('modal-add-cand');
+    }
+
+    async function openEditCandModal(id) {
+      const cands = await getCandidatesCached();
+      const cand = cands.find(c => String(c.id) === String(id));
+      if (!cand) return toast('Kandidat tidak ditemukan!', 'error');
+      document.getElementById('edit-id').value = cand.id;
+      document.getElementById('modal-cand-title').innerText = `✏️ Edit Pasangan Calon #${cand.number}`;
+      document.getElementById('cand-number').value = cand.number;
+      document.getElementById('cand-chairman').value = cand.chairman;
+      document.getElementById('cand-vice').value = cand.vice;
+      const prev = document.getElementById('photo-preview');
+      const placeholder = document.getElementById('photo-placeholder');
+      if (cand.pairImageUrl) {
+        prev.src = cand.pairImageUrl; prev.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+      } else {
+        prev.classList.add('hidden'); placeholder.classList.remove('hidden');
+      }
       selectedPhotoBase64 = null;
       openModal('modal-add-cand');
     }
@@ -2059,6 +2126,7 @@
     }
 
     async function saveCandidate() {
+      const editId = document.getElementById('edit-id').value;
       const number = document.getElementById('cand-number').value;
       const chairman = document.getElementById('cand-chairman').value;
       const vice = document.getElementById('cand-vice').value;
@@ -2066,9 +2134,17 @@
       const btn = document.getElementById('save-cand-btn');
       btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
       try {
-        const data = await fetch('/api/candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', candidate: { number: parseInt(number), chairman, vice, pairImageUrl: selectedPhotoBase64 || '' } }) }).then(r => r.json());
-        if (data.success) { toast('Pasangan berhasil ditambahkan!', 'success'); closeModal('modal-add-cand'); localStorage.removeItem('pemilu_candidates_cache'); loadCandidateAdminList(); }
-        else toast(data.message || 'Gagal.', 'error');
+        const payload = {
+          action: editId ? 'update' : 'add',
+          candidate: { id: editId || undefined, number: parseInt(number), chairman, vice, pairImageUrl: selectedPhotoBase64 || undefined }
+        };
+        const data = await fetch('/api/candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json());
+        if (data.success) {
+          toast(editId ? 'Pasangan berhasil diperbarui!' : 'Pasangan berhasil ditambahkan!', 'success');
+          closeModal('modal-add-cand');
+          localStorage.removeItem('pemilu_candidates_cache');
+          loadCandidateAdminList();
+        } else toast(data.message || 'Gagal.', 'error');
       } catch (e) { toast('Koneksi bermasalah.', 'error'); }
       finally { btn.disabled = false; btn.innerHTML = '💾 Simpan'; }
     }
@@ -2113,14 +2189,75 @@
       const data = await fetch('/api/stats').then(r => r.json());
       if (!data.success) return;
       document.getElementById('hasil-total').innerText = data.totalVotes;
+      const chartTotalVal = document.getElementById('chart-total-val');
+      if (chartTotalVal) chartTotalVal.innerText = data.totalVotes;
+
+      const colors = ['#2563EB', '#7C3AED', '#10B981', '#F59E0B', '#EF4444', '#EC4899'];
+      const breakdown = data.breakdown || [];
       const cnt = document.getElementById('hasil-list');
-      cnt.innerHTML = (data.breakdown || []).map(b => `<div class="result-item"><div class="result-hdr"><span class="result-name">Pasangan #${b.number} — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span><span class="result-pct">${b.percentage}% (${b.votes} suara)</span></div><div class="progress-wrap"><div class="progress-bar" style="width:${b.percentage}%"></div></div></div>`).join('');
+      cnt.innerHTML = breakdown.map((b, i) => `
+        <div class="result-item">
+          <div class="result-hdr">
+            <span class="result-name" style="display:flex;align-items:center;gap:.5rem">
+              <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${colors[i % colors.length]}"></span>
+              Pasangan #${b.number} — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}
+            </span>
+            <span class="result-pct">${b.percentage}% (${b.votes} suara)</span>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-bar" style="width:${b.percentage}%;background:${colors[i % colors.length]}"></div>
+          </div>
+        </div>`).join('');
+
+      // Render Pie/Donut Chart via CSS Conic Gradient
+      const chartWrap = document.getElementById('hasil-chart-wrap');
+      const pieChart = document.getElementById('hasil-pie-chart');
+      const legend = document.getElementById('chart-legend');
+
+      if (chartWrap && pieChart && legend) {
+        if (data.totalVotes > 0 && breakdown.length > 0) {
+          chartWrap.style.display = 'block';
+          let cumulative = 0;
+          const stops = [];
+          legend.innerHTML = breakdown.map((b, i) => {
+            const color = colors[i % colors.length];
+            const start = cumulative;
+            cumulative += b.percentage;
+            stops.push(`${color} ${start}% ${cumulative}%`);
+            return `<div style="display:flex;align-items:center;gap:.4rem"><span style="width:10px;height:10px;border-radius:50%;background:${color}"></span><span>Paslon #${b.number} (${b.percentage}%)</span></div>`;
+          }).join('');
+
+          pieChart.style.background = `conic-gradient(${stops.join(', ')})`;
+        } else {
+          chartWrap.style.display = 'none';
+        }
+      }
     }
+
     async function loadLogs() {
       const cnt = document.getElementById('log-list');
       cnt.innerHTML = '<div class="empty"><p>Log belum tersedia.</p></div>';
     }
-    function exportPDF() { window.print(); }
+
+    async function exportPDF() {
+      try {
+        const data = await fetch('/api/status').then(r => r.json());
+        if (data.title) {
+          const tEl = document.getElementById('print-title');
+          if (tEl) tEl.innerText = data.title;
+        }
+        let schedText = 'Jadwal Pemilu: Tidak Dibatasi';
+        if (data.startTime && data.endTime) {
+          const formatDt = (iso) => new Date(iso).toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' });
+          schedText = `Jadwal Pemilu: ${formatDt(data.startTime)} s/d ${formatDt(data.endTime)}`;
+        }
+        const sEl = document.getElementById('print-schedule');
+        if (sEl) sEl.innerText = schedText;
+        const dEl = document.getElementById('print-date');
+        if (dEl) dEl.innerText = `Laporan Dicetak: ${new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' })}`;
+      } catch (e) { }
+      window.print();
+    }
 
     // ── UTILS ─────────────────────────────────────────────────────────
     function openModal(id) { document.getElementById(id).classList.add('open'); }

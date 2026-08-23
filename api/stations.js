@@ -10,8 +10,9 @@ async function getVoteMultiplier(role, supabase) {
 
 async function insertSession(supabase, payload) {
   const uuid = randomUUID();
+  const now = new Date().toISOString();
   return await supabase.from('sessions')
-    .insert({ ...payload, session_id: uuid })
+    .insert({ ...payload, session_id: uuid, created_at: now })
     .select('*');
 }
 
@@ -75,32 +76,33 @@ export default async function handler(req, res) {
       const { requestId, role } = req.body || {};
       if (!requestId) return res.status(400).json({ success: false, message: 'requestId required' });
 
-      const approvedRole = role || 'peserta';
-
-      // Atomic update: only update if status is currently PENDING to prevent double approval
-      const { data: updatedReqs, error: updateErr } = await supabase
+      // 1. Fetch pending auth request
+      const { data: authReqs, error: fetchErr } = await supabase
         .from('auth_requests')
-        .update({ status: 'APPROVED', role: approvedRole, updated_at: new Date().toISOString() })
+        .select('*')
         .eq('id', requestId)
-        .eq('status', 'PENDING')
-        .select('*');
+        .eq('status', 'PENDING');
 
-      if (updateErr || !updatedReqs?.[0]) {
+      if (fetchErr || !authReqs?.[0]) {
         return res.status(400).json({ success: false, message: 'Permintaan autentikasi sudah diproses atau tidak valid.' });
       }
 
-      const targetStation = updatedReqs[0].station_id;
+      const targetStation = authReqs[0].station_id;
+      const approvedRole = role || authReqs[0].role || 'peserta';
       const multiplier = await getVoteMultiplier(approvedRole, supabase);
 
-      // Terminate any previous ACTIVE session for this station to prevent duplicates
+      // 2. Terminate any previous ACTIVE session for this station to prevent duplicates
       await supabase.from('sessions')
         .update({ status: 'COMPLETED' })
         .eq('station_id', targetStation)
         .eq('status', 'ACTIVE');
 
-      // Create an ACTIVE session for the station with locked role & vote_multiplier
+      // 3. Create new ACTIVE session FIRST
       const { data: newSessions, error: sessErr } = await insertSession(supabase, {
-        station_id: targetStation, status: 'ACTIVE', role: approvedRole, vote_multiplier: multiplier
+        station_id: targetStation,
+        status: 'ACTIVE',
+        role: approvedRole,
+        vote_multiplier: multiplier
       });
 
       if (sessErr || !newSessions?.[0]) {
@@ -110,6 +112,12 @@ export default async function handler(req, res) {
 
       const newSession = newSessions[0];
       const actualSessionId = newSession.session_id || newSession.id;
+
+      // 4. Mark auth request APPROVED ONLY AFTER session creation succeeds!
+      await supabase.from('auth_requests')
+        .update({ status: 'APPROVED', role: approvedRole, updated_at: new Date().toISOString() })
+        .eq('id', requestId)
+        .eq('status', 'PENDING');
 
       return res.status(200).json({
         success: true,
@@ -130,29 +138,27 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: 'Permintaan ditolak.' });
     }
 
-    // POST: disconnect — panitia disconnects a station (marks any active session COMPLETED)
+    // POST: disconnect — panitia disconnects a station (marks any session COMPLETED)
     if (action === 'disconnect') {
       await supabase.from('sessions')
         .update({ status: 'COMPLETED' })
-        .eq('station_id', stationId).eq('status', 'ACTIVE');
+        .eq('station_id', stationId);
       await supabase.from('auth_requests')
         .update({ status: 'REJECTED', updated_at: new Date().toISOString() })
-        .eq('station_id', stationId).eq('status', 'PENDING');
+        .eq('station_id', stationId);
       return res.status(200).json({ success: true, message: `${stationId} telah di-disconnect.` });
     }
 
     // POST: next — "Peserta berikutnya" — after VOTED/COMPLETED, returns station to IDLE
     if (action === 'next' || action === 'create') {
-      // Mark any ACTIVE or VOTED session for this station as COMPLETED
+      // Mark any session for this station as COMPLETED
       await supabase.from('sessions')
         .update({ status: 'COMPLETED' })
-        .eq('station_id', stationId)
-        .in('status', ['ACTIVE', 'VOTED']);
+        .eq('station_id', stationId);
 
       await supabase.from('auth_requests')
         .update({ status: 'REJECTED', updated_at: new Date().toISOString() })
-        .eq('station_id', stationId)
-        .eq('status', 'PENDING');
+        .eq('station_id', stationId);
 
       return res.status(200).json({
         success: true,
@@ -196,7 +202,11 @@ export default async function handler(req, res) {
         if (!stationMap[s.station_id]) stationMap[s.station_id] = s;
       });
 
-      return res.status(200).json({ success: true, stations: Object.values(stationMap).sort((a, b) => a.station_id.localeCompare(b.station_id)) });
+      const activeStations = Object.values(stationMap)
+        .filter(s => s.status !== 'COMPLETED')
+        .sort((a, b) => a.station_id.localeCompare(b.station_id));
+
+      return res.status(200).json({ success: true, stations: activeStations });
     }
 
     return res.status(400).json({ success: false, message: 'Action tidak valid.' });
