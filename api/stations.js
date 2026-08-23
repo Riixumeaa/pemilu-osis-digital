@@ -44,7 +44,22 @@ export default async function handler(req, res) {
 
     // POST action: request_auth — station requests panitia authentication
     if (action === 'request_auth') {
-      // Cancel any previous PENDING requests for this station
+      // 1. Check if station already has an ACTIVE or VOTED session on another device
+      const { data: activeSess } = await supabase
+        .from('sessions')
+        .select('session_id, status')
+        .eq('station_id', stationId)
+        .in('status', ['ACTIVE', 'VOTED'])
+        .limit(1);
+
+      if (activeSess?.length) {
+        return res.status(400).json({
+          success: false,
+          message: `${stationId} sedang terautentikasi dan aktif di perangkat lain. Minta Panitia "Putuskan Sesi" jika ingin berpindah perangkat.`
+        });
+      }
+
+      // 2. Cancel any previous PENDING requests for this station
       await supabase.from('auth_requests')
         .update({ status: 'REJECTED', updated_at: new Date().toISOString() })
         .eq('station_id', stationId).eq('status', 'PENDING');
@@ -149,9 +164,20 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: `${stationId} telah di-disconnect.` });
     }
 
-    // POST: next — "Peserta berikutnya" — after VOTED/COMPLETED, returns station to IDLE
+    // POST: next — "Peserta berikutnya" — Marks previous session COMPLETED, creates new ACTIVE session automatically (no re-auth needed!)
     if (action === 'next' || action === 'create') {
-      // Mark any session for this station as COMPLETED
+      // 1. Fetch current role & multiplier from previous session
+      const { data: lastSess } = await supabase
+        .from('sessions')
+        .select('role, vote_multiplier')
+        .eq('station_id', stationId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const currentRole = lastSess?.[0]?.role || 'peserta';
+      const multiplier = lastSess?.[0]?.vote_multiplier || (await getVoteMultiplier(currentRole, supabase));
+
+      // 2. Mark any previous session for this station as COMPLETED
       await supabase.from('sessions')
         .update({ status: 'COMPLETED' })
         .eq('station_id', stationId);
@@ -160,10 +186,24 @@ export default async function handler(req, res) {
         .update({ status: 'REJECTED', updated_at: new Date().toISOString() })
         .eq('station_id', stationId);
 
+      // 3. Immediately create new ACTIVE session for the next voter
+      const { data: newSessions, error: sessErr } = await insertSession(supabase, {
+        station_id: stationId,
+        status: 'ACTIVE',
+        role: currentRole,
+        vote_multiplier: multiplier
+      });
+
+      if (sessErr || !newSessions?.[0]) {
+        return res.status(500).json({ success: false, message: 'Gagal membuat sesi untuk peserta berikutnya.' });
+      }
+
       return res.status(200).json({
         success: true,
         stationId,
-        message: `${stationId} siap untuk peserta berikutnya!`
+        sessionId: newSessions[0].session_id,
+        role: currentRole,
+        message: `${stationId} otomatis aktif untuk peserta berikutnya!`
       });
     }
 

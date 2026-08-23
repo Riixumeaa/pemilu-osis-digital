@@ -2352,50 +2352,104 @@
         fetch('/api/stats').then(r => r.json()).catch(() => ({}))
       ]);
       const title = statusData.title || statsData.title || 'PEMILU OSIS DIGITAL';
-      const formatDt = iso => iso ? new Date(iso).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : '—';
+      const formatDt = iso => iso ? new Date(iso).toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' }) : '—';
       const schedText = (statusData.startTime && statusData.endTime)
         ? `${formatDt(statusData.startTime)} s/d ${formatDt(statusData.endTime)}`
-        : 'Jadwal tidak dibatasi';
+        : 'Jadwal tidak dibatasi (Fleksibel)';
       const breakdown = statsData.breakdown || [];
       const totalVotes = statsData.totalVotes || 0;
-      const colors = ['#2563EB', '#7C3AED', '#10B981', '#F59E0B', '#EF4444', '#EC4899'];
+      const colors = ['#1E40AF', '#7C3AED', '#059669', '#D97706', '#DC2626', '#EC4899'];
+
       let winner = null;
       breakdown.forEach(b => { if (!winner || b.votes > winner.votes) winner = b; });
-      let conicStops = '#E5E7EB 0% 100%'; let legendHtml = '';
+
+      let conicStops = '#E5E7EB 0% 100%';
+      let legendHtml = '';
       if (totalVotes > 0 && breakdown.length) {
         let cum = 0; const stops = [];
         legendHtml = breakdown.map((b, i) => {
           const c = colors[i % colors.length], s = cum;
           cum += parseFloat(b.percentage) || 0; stops.push(`${c} ${s}% ${cum}%`);
-          return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11.5px"><span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span><span><strong>Paslon #${b.number}</strong> — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}: <strong>${b.votes} suara (${b.percentage}%)</strong></span></div>`;
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#F8FAFC;border-radius:6px;margin-bottom:6px;border:1px solid #E2E8F0">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="width:14px;height:14px;border-radius:4px;background:${c};flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,0.2)"></span>
+              <span style="font-size:12px;font-weight:700;color:#1E293B">Paslon #${b.number}</span>
+              <span style="font-size:11.5px;color:#475569">(${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)})</span>
+            </div>
+            <div style="font-size:12px;font-weight:800;color:${c}">${b.votes} Suara (${b.percentage}%)</div>
+          </div>`;
         }).join('');
         conicStops = stops.join(', ');
       }
-      const barHtml = breakdown.map((b, i) => `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span><strong>Pasangan #${b.number}</strong> — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span><span style="font-weight:bold">${b.percentage}% &bull; ${b.votes} suara</span></div><div style="background:#E5E7EB;border-radius:4px;height:14px"><div style="height:100%;width:${b.percentage}%;background:${colors[i % colors.length]};border-radius:4px"></div></div></div>`).join('');
+
+      const barHtml = breakdown.map((b, i) => `
+        <div style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px">
+            <span style="font-weight:700;color:#1E293B">Pasangan #${b.number} — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span>
+            <span style="font-weight:800;color:${colors[i % colors.length]}">${b.percentage}% &bull; ${b.votes} suara</span>
+          </div>
+          <div style="background:#E2E8F0;border-radius:6px;height:16px;overflow:hidden;padding:2px">
+            <div style="height:100%;width:${b.percentage}%;background:${colors[i % colors.length]};border-radius:4px;transition:width .3s"></div>
+          </div>
+        </div>`).join('');
+
+      const printDateStr = new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' });
+
       const ph = document.getElementById('print-header');
       if (ph) ph.innerHTML = `
-        <div style="text-align:center;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid #1565C0">
-          <div style="font-size:11px;color:#777;letter-spacing:2px;text-transform:uppercase">Laporan Resmi Pemilihan</div>
-          <h1 style="font-size:20px;color:#1565C0;margin:4px 0;font-weight:900">${escapeHtml(title)}</h1>
-          <div style="font-size:12px;font-weight:700;color:#333;letter-spacing:1px">HASIL PEROLEHAN SUARA</div>
+        <div style="text-align:center;margin-bottom:16px;padding-bottom:14px;border-bottom:3px double #1E40AF">
+          <div style="font-size:10px;font-weight:800;color:#64748B;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:2px">ORGANISASI SISWA INTRA SEKOLAH (OSIS)</div>
+          <h1 style="font-size:22px;color:#1E40AF;margin:2px 0 4px;font-weight:900;letter-spacing:-0.5px">${escapeHtml(title)}</h1>
+          <div style="font-size:12px;font-weight:800;color:#0F172A;letter-spacing:1.5px;background:#EFF6FF;display:inline-block;padding:3px 14px;border-radius:12px;border:1px solid #BFDBFE">BERITA ACARA HASIL PEROLEHAN SUARA</div>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#555;margin-bottom:14px">
-          <span>📅 Jadwal: ${schedText}</span>
-          <span>🖨️ Dicetak: ${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'medium' })}</span>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:11px;color:#334155">
+          <div>📌 <strong>Status Pemilu:</strong> SELESAI / RESMI</div>
+          <div>📅 <strong>Jadwal Pelaksanaan:</strong> ${schedText}</div>
+          <div>📥 <strong>Total Suara Masuk:</strong> <span style="font-size:12px;font-weight:800;color:#1E40AF">${totalVotes} Suara</span></div>
+          <div>🖨️ <strong>Waktu Cetak Dokumen:</strong> ${printDateStr}</div>
         </div>
-        ${winner ? `<div style="background:#EFF6FF;border:2px solid #2563EB;border-radius:8px;padding:10px 14px;margin-bottom:14px;text-align:center"><div style="font-size:10px;color:#1565C0;font-weight:700;text-transform:uppercase;letter-spacing:1px">🏆 PASANGAN SUARA TERBANYAK</div><div style="font-size:17px;font-weight:900;color:#1E40AF;margin:4px 0">Pasangan #${winner.number} — ${escapeHtml(winner.chairman)} &amp; ${escapeHtml(winner.vice)}</div><div style="font-size:12px;color:#374151">${winner.votes} suara &bull; ${winner.percentage}% dari total</div></div>` : ''}
-        <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:16px">
+
+        ${winner ? `
+        <div style="background:linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);border:2px solid #2563EB;border-radius:10px;padding:12px 18px;margin-bottom:18px;text-align:center;box-shadow:0 2px 8px rgba(37,99,235,0.1)">
+          <div style="font-size:10px;color:#1D4ED8;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:2px">🏆 PASANGAN PASLON DENGAN PEROLEHAN SUARA TERBANYAK</div>
+          <div style="font-size:20px;font-weight:900;color:#1E3A8A;margin:2px 0">Pasangan #${winner.number} &mdash; ${escapeHtml(winner.chairman)} &amp; ${escapeHtml(winner.vice)}</div>
+          <div style="font-size:13px;font-weight:700;color:#1D4ED8">${winner.votes} Suara (${winner.percentage}% dari total partisipasi)</div>
+        </div>` : ''}
+
+        <div style="display:flex;gap:24px;align-items:center;margin-bottom:20px;background:#FFF;border:1px solid #E2E8F0;border-radius:10px;padding:16px">
           <div style="text-align:center;flex-shrink:0">
-            <div style="width:130px;height:130px;border-radius:50%;background:conic-gradient(${conicStops});margin:0 auto 6px;box-shadow:0 2px 10px rgba(0,0,0,.15)"></div>
-            <div style="font-size:11px;font-weight:700;color:#333">Total: ${totalVotes} suara</div>
+            <div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(${conicStops});margin:0 auto 8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);border:3px solid #FFF"></div>
+            <div style="font-size:11px;font-weight:800;color:#1E293B">Visual Diagram Suara</div>
           </div>
-          <div style="flex:1">${legendHtml}</div>
+          <div style="flex:1">
+            <div style="font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Ringkasan Perolehan</div>
+            ${legendHtml}
+          </div>
         </div>
-        <div style="border-top:1px solid #E5E7EB;padding-top:10px">
-          <div style="font-size:11px;font-weight:800;color:#333;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Detail Perolehan Suara</div>
+
+        <div style="border:1px solid #E2E8F0;border-radius:10px;padding:14px;margin-bottom:24px;background:#FFF">
+          <div style="font-size:12px;font-weight:800;color:#0F172A;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #F1F5F9;padding-bottom:6px">Rincian Grafik Perolehan Suara</div>
           ${barHtml}
         </div>
-        <div style="border-top:1px solid #E5E7EB;margin-top:10px;padding-top:8px;font-size:9.5px;color:#AAA;text-align:center">Dihasilkan oleh Sistem Pemilu Digital OSIS &bull; Dokumen ini merupakan laporan resmi pemilihan.</div>`;
+
+        <div style="display:flex;justify-content:space-between;margin-top:30px;padding-top:16px;font-size:11px;color:#334155;page-break-inside:avoid">
+          <div style="text-align:center;width:200px">
+            <div>Ketua Panitia Pemilihan</div>
+            <div style="height:50px"></div>
+            <div style="font-weight:800;border-bottom:1px solid #333;display:inline-block;padding:0 15px">( ........................................ )</div>
+          </div>
+          <div style="text-align:center;width:200px">
+            <div>Pembina OSIS / Saksi</div>
+            <div style="height:50px"></div>
+            <div style="font-weight:800;border-bottom:1px solid #333;display:inline-block;padding:0 15px">( ........................................ )</div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid #E2E8F0;margin-top:20px;padding-top:8px;font-size:9.5px;color:#94A3B8;text-align:center">
+          Dokumen Berita Acara ini secara sah dihasilkan oleh Sistem Pemilu Digital OSIS &bull; Tanggal Cetak: ${printDateStr}
+        </div>`;
+
       window.print();
     }
 
