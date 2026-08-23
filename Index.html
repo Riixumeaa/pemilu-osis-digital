@@ -50,6 +50,59 @@
       --tr: .2s cubic-bezier(.4, 0, .2, 1)
     }
 
+    @media print {
+      body {
+        background: #fff !important;
+      }
+
+      .topbar,
+      .sidebar,
+      .app-nav,
+      .modal-overlay,
+      #toast-cnt,
+      .no-print,
+      .btn,
+      nav,
+      header,
+      footer,
+      .tab-btn {
+        display: none !important;
+      }
+
+      #print-header {
+        display: block !important;
+      }
+
+      #tab-hasil {
+        display: block !important;
+      }
+
+      .app-view {
+        display: block !important;
+        padding: 0 !important;
+        overflow: visible !important;
+      }
+
+      #view-admin {
+        display: block !important;
+        background: #fff;
+      }
+
+      #admin-app-screen {
+        display: block !important;
+      }
+
+      * {
+        color: #000;
+        box-shadow: none !important;
+      }
+
+      @page {
+        margin: 14mm 14mm 14mm 14mm;
+        size: A4;
+      }
+    }
+
     a {
       color: var(--blue);
       text-decoration: none
@@ -1592,6 +1645,7 @@
     let candidateCache = [];
     let supabaseClient = null;
     let realtimeChannel = null;
+    let dashRealtimeChannel = null;
     let dashboardPollTimer = null;
     let isTabActive = true;
     let selectedPhotoBase64 = null;
@@ -1633,34 +1687,63 @@
         try { supabaseClient.removeChannel(realtimeChannel); } catch (e) { }
         realtimeChannel = null;
       }
+      // Use server-side filter for reliable push delivery
       realtimeChannel = supabaseClient
-        .channel('station_' + stationId)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, (p) => {
-          if (p.new && p.new.station_id === stationId) {
-            currentSessionId = p.new.session_id || p.new.id || '';
+        .channel('station_rt_' + stationId)
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'sessions', filter: `station_id=eq.${stationId}` },
+          (p) => {
+            if (!p.new) return;
+            currentSessionId = p.new.session_id || '';
             currentSessionRole = p.new.role || 'peserta';
             if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
-            if (p.new.status === 'COMPLETED' || p.new.status === 'WAITING') {
-              updateVotingStationUI('IDLE');
-            } else {
-              updateVotingStationUI(p.new.status);
-            }
-          }
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'auth_requests' }, (p) => {
-          if (p.new && p.new.station_id === stationId) {
+            const s = p.new.status;
+            if (s === 'COMPLETED' || s === 'WAITING') updateVotingStationUI('IDLE');
+            else updateVotingStationUI(s);
+          })
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'auth_requests', filter: `station_id=eq.${stationId}` },
+          (p) => {
+            if (!p.new) return;
             if (p.new.status === 'APPROVED') {
-              initVotingStation();
+              // Wait 500ms for session INSERT to be committed, then fetch fresh state
+              setTimeout(() => initVotingStation(), 500);
             } else if (p.new.status === 'REJECTED') {
               updateVotingStationUI('IDLE');
             }
-          }
+          })
+        .subscribe((status) => {
+          console.log('[RT Station]', stationId, status);
+        });
+    }
+
+    function subscribeDashboardRealtime() {
+      if (!supabaseClient) return;
+      if (dashRealtimeChannel) {
+        try { supabaseClient.removeChannel(dashRealtimeChannel); } catch (e) { }
+        dashRealtimeChannel = null;
+      }
+      dashRealtimeChannel = supabaseClient
+        .channel('dashboard_rt')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
+          loadDashStats();
         })
-        .subscribe();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'auth_requests' }, () => {
+          loadAuthRequests(); loadDashStats();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, () => {
+          loadDashStats();
+        })
+        .subscribe((status) => {
+          console.log('[RT Dashboard]', status);
+          const b = document.getElementById('dash-polling-badge');
+          if (b) { b.className = 'badge badge-running'; b.innerHTML = '<span class="dot"></span> Live Realtime'; }
+        });
     }
 
     function unsubscribeRealtime() {
       if (realtimeChannel && supabaseClient) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
+      if (dashRealtimeChannel && supabaseClient) { supabaseClient.removeChannel(dashRealtimeChannel); dashRealtimeChannel = null; }
     }
 
     // ── NAVIGATION ────────────────────────────────────────────────────
@@ -1669,12 +1752,19 @@
       const t = document.getElementById('view-' + viewId);
       if (t) t.classList.add('active');
       if (dashboardPollTimer) { clearInterval(dashboardPollTimer); dashboardPollTimer = null; }
+      if (dashRealtimeChannel && supabaseClient && viewId !== 'dashboard') {
+        try { supabaseClient.removeChannel(dashRealtimeChannel); } catch (e) { }
+        dashRealtimeChannel = null;
+      }
 
       if (viewId === 'admin') {
         if (adminToken) verifyAdminSession().then(ok => ok ? showAdminApp() : showAdminLogin());
         else showAdminLogin();
       } else if (viewId === 'dashboard') {
-        startDashboardPolling(); loadDashStats(); loadAuthRequests();
+        subscribeDashboardRealtime();
+        startDashboardPolling();
+        loadDashStats();
+        loadAuthRequests();
       } else if (viewId === 'voting') {
         if (!currentStationId) { openStationSetup(); navTo('home'); return; }
         initVotingStation();
@@ -1988,6 +2078,11 @@
       if (tabId === 'log') loadLogs();
     }
 
+    function fmtDateTime(isoStr) {
+      if (!isoStr) return '—';
+      return new Date(isoStr).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+    }
+
     async function loadOverview() {
       try {
         const data = await fetch('/api/stats').then(r => r.json());
@@ -1998,7 +2093,22 @@
         updateStatusBadge('ov-status', data.electionStatus);
         document.getElementById('ov-title').innerText = data.title;
         document.getElementById('ov-title-input').value = data.title;
-        loadSchedule();
+        // Show schedule in overview table
+        const ovStart = document.getElementById('ov-start');
+        const ovEnd = document.getElementById('ov-end');
+        if (ovStart) ovStart.innerText = fmtDateTime(data.startTime);
+        if (ovEnd) ovEnd.innerText = fmtDateTime(data.endTime);
+        // Pre-fill schedule inputs
+        if (data.startTime) {
+          const sDate = new Date(data.startTime);
+          const el = document.getElementById('sched-start');
+          if (el) el.value = new Date(sDate.getTime() - sDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        }
+        if (data.endTime) {
+          const eDate = new Date(data.endTime);
+          const el = document.getElementById('sched-end');
+          if (el) el.value = new Date(eDate.getTime() - eDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        }
       } catch (e) { }
     }
 
@@ -2010,17 +2120,8 @@
     }
 
     async function loadSchedule() {
-      try {
-        const data = await fetch('/api/status').then(r => r.json());
-        if (data.startTime) {
-          const sDate = new Date(data.startTime);
-          document.getElementById('sched-start').value = new Date(sDate.getTime() - sDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        }
-        if (data.endTime) {
-          const eDate = new Date(data.endTime);
-          document.getElementById('sched-end').value = new Date(eDate.getTime() - eDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        }
-      } catch (e) { }
+      // loadSchedule now handled within loadOverview via stats API
+      loadOverview();
     }
 
     async function loadVoteConfig() {
@@ -2055,8 +2156,14 @@
       btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
       const data = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'schedule', token: adminToken, startTime: new Date(start).toISOString(), endTime: new Date(end).toISOString() }) }).then(r => r.json());
       btn.disabled = false; btn.innerHTML = '💾 Simpan Jadwal';
-      if (data.success) { toast(data.message, 'success'); loadOverview(); }
-      else toast(data.message || 'Gagal simpan jadwal.', 'error');
+      if (data.success) {
+        toast('Jadwal berhasil disimpan!', 'success');
+        // Refresh overview + pre-fill schedule fields
+        loadOverview();
+        // Switch to overview tab so user can see the updated schedule
+        const ovBtn = document.querySelector('[onclick*="overview"]');
+        if (ovBtn) ovBtn.click();
+      } else toast(data.message || 'Gagal simpan jadwal.', 'error');
     }
 
     async function loadCandidateAdminList() {
@@ -2240,22 +2347,55 @@
     }
 
     async function exportPDF() {
-      try {
-        const data = await fetch('/api/status').then(r => r.json());
-        if (data.title) {
-          const tEl = document.getElementById('print-title');
-          if (tEl) tEl.innerText = data.title;
-        }
-        let schedText = 'Jadwal Pemilu: Tidak Dibatasi';
-        if (data.startTime && data.endTime) {
-          const formatDt = (iso) => new Date(iso).toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' });
-          schedText = `Jadwal Pemilu: ${formatDt(data.startTime)} s/d ${formatDt(data.endTime)}`;
-        }
-        const sEl = document.getElementById('print-schedule');
-        if (sEl) sEl.innerText = schedText;
-        const dEl = document.getElementById('print-date');
-        if (dEl) dEl.innerText = `Laporan Dicetak: ${new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' })}`;
-      } catch (e) { }
+      const [statusData, statsData] = await Promise.all([
+        fetch('/api/status').then(r => r.json()).catch(() => ({})),
+        fetch('/api/stats').then(r => r.json()).catch(() => ({}))
+      ]);
+      const title = statusData.title || statsData.title || 'PEMILU OSIS DIGITAL';
+      const formatDt = iso => iso ? new Date(iso).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : '—';
+      const schedText = (statusData.startTime && statusData.endTime)
+        ? `${formatDt(statusData.startTime)} s/d ${formatDt(statusData.endTime)}`
+        : 'Jadwal tidak dibatasi';
+      const breakdown = statsData.breakdown || [];
+      const totalVotes = statsData.totalVotes || 0;
+      const colors = ['#2563EB', '#7C3AED', '#10B981', '#F59E0B', '#EF4444', '#EC4899'];
+      let winner = null;
+      breakdown.forEach(b => { if (!winner || b.votes > winner.votes) winner = b; });
+      let conicStops = '#E5E7EB 0% 100%'; let legendHtml = '';
+      if (totalVotes > 0 && breakdown.length) {
+        let cum = 0; const stops = [];
+        legendHtml = breakdown.map((b, i) => {
+          const c = colors[i % colors.length], s = cum;
+          cum += parseFloat(b.percentage) || 0; stops.push(`${c} ${s}% ${cum}%`);
+          return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11.5px"><span style="width:11px;height:11px;border-radius:50%;background:${c};flex-shrink:0"></span><span><strong>Paslon #${b.number}</strong> — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}: <strong>${b.votes} suara (${b.percentage}%)</strong></span></div>`;
+        }).join('');
+        conicStops = stops.join(', ');
+      }
+      const barHtml = breakdown.map((b, i) => `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span><strong>Pasangan #${b.number}</strong> — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span><span style="font-weight:bold">${b.percentage}% &bull; ${b.votes} suara</span></div><div style="background:#E5E7EB;border-radius:4px;height:14px"><div style="height:100%;width:${b.percentage}%;background:${colors[i % colors.length]};border-radius:4px"></div></div></div>`).join('');
+      const ph = document.getElementById('print-header');
+      if (ph) ph.innerHTML = `
+        <div style="text-align:center;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid #1565C0">
+          <div style="font-size:11px;color:#777;letter-spacing:2px;text-transform:uppercase">Laporan Resmi Pemilihan</div>
+          <h1 style="font-size:20px;color:#1565C0;margin:4px 0;font-weight:900">${escapeHtml(title)}</h1>
+          <div style="font-size:12px;font-weight:700;color:#333;letter-spacing:1px">HASIL PEROLEHAN SUARA</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#555;margin-bottom:14px">
+          <span>📅 Jadwal: ${schedText}</span>
+          <span>🖨️ Dicetak: ${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'medium' })}</span>
+        </div>
+        ${winner ? `<div style="background:#EFF6FF;border:2px solid #2563EB;border-radius:8px;padding:10px 14px;margin-bottom:14px;text-align:center"><div style="font-size:10px;color:#1565C0;font-weight:700;text-transform:uppercase;letter-spacing:1px">🏆 PASANGAN SUARA TERBANYAK</div><div style="font-size:17px;font-weight:900;color:#1E40AF;margin:4px 0">Pasangan #${winner.number} — ${escapeHtml(winner.chairman)} &amp; ${escapeHtml(winner.vice)}</div><div style="font-size:12px;color:#374151">${winner.votes} suara &bull; ${winner.percentage}% dari total</div></div>` : ''}
+        <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:16px">
+          <div style="text-align:center;flex-shrink:0">
+            <div style="width:130px;height:130px;border-radius:50%;background:conic-gradient(${conicStops});margin:0 auto 6px;box-shadow:0 2px 10px rgba(0,0,0,.15)"></div>
+            <div style="font-size:11px;font-weight:700;color:#333">Total: ${totalVotes} suara</div>
+          </div>
+          <div style="flex:1">${legendHtml}</div>
+        </div>
+        <div style="border-top:1px solid #E5E7EB;padding-top:10px">
+          <div style="font-size:11px;font-weight:800;color:#333;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Detail Perolehan Suara</div>
+          ${barHtml}
+        </div>
+        <div style="border-top:1px solid #E5E7EB;margin-top:10px;padding-top:8px;font-size:9.5px;color:#AAA;text-align:center">Dihasilkan oleh Sistem Pemilu Digital OSIS &bull; Dokumen ini merupakan laporan resmi pemilihan.</div>`;
       window.print();
     }
 

@@ -43,15 +43,29 @@ export default async function handler(req, res) {
     const settingsMap = {};
     (settings || []).forEach(s => { settingsMap[s.key] = s.value; });
 
+    // Only fetch non-COMPLETED sessions (latest per station)
     const { data: sessions } = await supabase
       .from('sessions')
-      .select('*')
+      .select('session_id, station_id, status, role, vote_multiplier, created_at')
       .order('created_at', { ascending: false });
 
     const stationMap = {};
     (sessions || []).forEach(s => {
-      if (!stationMap[s.station_id]) stationMap[s.station_id] = { sessionId: s.session_id || s.id, stationId: s.station_id, status: s.status, role: s.role || 'peserta', voteMultiplier: s.vote_multiplier || 1 };
+      if (!stationMap[s.station_id]) {
+        stationMap[s.station_id] = {
+          sessionId: s.session_id,
+          stationId: s.station_id,
+          status: s.status,
+          role: s.role || 'peserta',
+          voteMultiplier: s.vote_multiplier || 1
+        };
+      }
     });
+
+    // Filter out stations whose latest session is COMPLETED
+    const activeStations = Object.values(stationMap)
+      .filter(s => s.status !== 'COMPLETED')
+      .sort((a, b) => a.stationId.localeCompare(b.stationId));
 
     return res.status(200).json({
       success: true,
@@ -60,13 +74,15 @@ export default async function handler(req, res) {
       breakdown,
       electionStatus: settingsMap['STATUS'] || 'NOT_STARTED',
       title: settingsMap['TITLE'] || 'PEMILU OSIS DIGITAL',
+      startTime: settingsMap['START_TIME'] || '',
+      endTime: settingsMap['END_TIME'] || '',
       candidateVersion: settingsMap['CANDIDATE_VERSION'] || '1',
       voteConfig: {
         peserta: parseInt(settingsMap['votes_peserta'] || '1'),
         panitia: parseInt(settingsMap['votes_panitia'] || '1'),
         guru: parseInt(settingsMap['votes_guru'] || '1')
       },
-      stations: Object.values(stationMap).sort((a, b) => a.stationId.localeCompare(b.stationId))
+      stations: activeStations
     });
   } catch (err) {
     console.error('Stats API Error:', err);
