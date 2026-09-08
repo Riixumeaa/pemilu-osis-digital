@@ -1965,43 +1965,55 @@
     }, { once: false });
 
     let stationHeartbeatTimer = null;
-    function startStationHeartbeat() {
+    let stationSyncTimer = null;
+    let lastStationStatus = null;
+
+    function startStationSync() {
       if (stationHeartbeatTimer) clearInterval(stationHeartbeatTimer);
-      const doPing = async () => {
+      if (stationSyncTimer) clearInterval(stationSyncTimer);
+
+      const checkSync = async () => {
         if (currentView === 'station' && currentStationId) {
           try {
-            await fetchWithRetry(`/api/stations`, {
+            // Heartbeat ping
+            fetch(`/api/stations`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ action: 'ping', stationId: currentStationId })
-            });
+            }).catch(() => { });
+
+            // Fetch session status (ultra-lightweight payload ~80 bytes)
+            const data = await fetch(`/api/stations?action=get&stationId=${currentStationId}`).then(r => r.json());
+            if (data.success) {
+              currentSessionId = data.sessionId || '';
+              currentSessionRole = data.role || 'peserta';
+              if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
+              updateVotingStationUI(data.status);
+            }
           } catch (e) { }
         }
       };
-      doPing();
-      stationHeartbeatTimer = setInterval(doPing, 5000);
+
+      checkSync();
+      stationSyncTimer = setInterval(checkSync, 1000); // 1.0s fast sync
     }
 
     // ── VOTING STATION FLOW ───────────────────────────────────────────
     async function initVotingStation() {
-      startStationHeartbeat();
-      subscribeStationRealtime(currentStationId);
+      const idle = document.getElementById('vote-idle');
+      if (idle) idle.style.display = 'flex'; // Immediately display station screen
       document.getElementById('idle-station-id').innerHTML = `<span class="dot" style="background:#fff"></span> ${currentStationId}`;
       document.getElementById('pending-station-id').innerHTML = `<span class="dot" style="background:#A78BFA"></span> ${currentStationId} — Menunggu...`;
       document.getElementById('vote-station-tag').innerText = currentStationId;
 
-      try {
-        const data = await fetch(`/api/stations?action=get&stationId=${currentStationId}`).then(r => r.json());
-        if (data.success) {
-          currentSessionId = data.sessionId || '';
-          currentSessionRole = data.role || 'peserta';
-          if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
-          updateVotingStationUI(data.status);
-        } else updateVotingStationUI('IDLE');
-      } catch (e) { updateVotingStationUI('IDLE'); }
+      subscribeStationRealtime(currentStationId);
+      startStationSync();
     }
 
     async function updateVotingStationUI(status) {
+      if (lastStationStatus === status && status !== 'ACTIVE') return;
+      lastStationStatus = status;
+
       const idle = document.getElementById('vote-idle');
       const pending = document.getElementById('vote-pending');
       const select = document.getElementById('vote-select-screen');
@@ -2093,7 +2105,7 @@
     // ── DASHBOARD ─────────────────────────────────────────────────────
     function startDashboardPolling() {
       if (dashboardPollTimer) clearInterval(dashboardPollTimer);
-      dashboardPollTimer = setInterval(() => { if (isTabActive) { loadDashStats(); loadAuthRequests(); } }, 5000);
+      dashboardPollTimer = setInterval(() => { if (isTabActive) { loadDashStats(); loadAuthRequests(); } }, 1000); // 1.0s fast sync
     }
 
     async function loadDashStats() {
