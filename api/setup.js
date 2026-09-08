@@ -125,10 +125,13 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'auth_requests') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE auth_requests;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'settings') THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE settings;
-  END IF;
-END $$;
+-- Enable Row Level Security (RLS) on all tables to BLOCK direct public API access
+ALTER TABLE candidates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE logs ENABLE ROW LEVEL SECURITY;
 
 -- ================================================================
 -- SUBMIT_VOTE RPC — Atomic with vote_weight support
