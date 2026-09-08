@@ -1850,10 +1850,7 @@
 
     // ── NAVIGATION ────────────────────────────────────────────────────
     function navTo(viewId) {
-      currentView = viewId === 'voting' ? 'station' : viewId;
-      document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
-      const t = document.getElementById('view-' + viewId);
-      if (t) t.classList.add('active');
+      // Stop any existing dashboard polling/realtime when navigating away
       if (dashboardPollTimer) { clearInterval(dashboardPollTimer); dashboardPollTimer = null; }
       if (dashRealtimeChannel && supabaseClient && viewId !== 'dashboard') {
         try { supabaseClient.removeChannel(dashRealtimeChannel); } catch (e) { }
@@ -1861,30 +1858,77 @@
       }
 
       if (viewId === 'admin') {
+        _showView('admin');
         if (adminToken) verifyAdminSession().then(ok => ok ? showAdminApp() : showAdminLogin());
         else showAdminLogin();
+
       } else if (viewId === 'dashboard') {
+        // DO NOT show dashboard view until auth is confirmed
+        _showView('home'); // Hold on home while verifying
+        const doEnterDash = () => {
+          _showView('dashboard');
+          currentView = 'dashboard';
+          subscribeDashboardRealtime();
+          startDashboardPolling();
+          loadDashStats();
+          loadAuthRequests();
+        };
         if (adminToken) {
           verifyAdminSession().then(ok => {
-            if (ok) { subscribeDashboardRealtime(); startDashboardPolling(); loadDashStats(); loadAuthRequests(); }
-            else openDashboardAuth();
+            if (ok) doEnterDash();
+            else {
+              openDashboardAuth();
+              // If modal canceled, user stays on home (already set above)
+            }
           });
         } else {
           openDashboardAuth();
-          return;
         }
+        return; // currentView already set by doEnterDash if auth passes
+
       } else if (viewId === 'voting') {
-        if (!currentStationId) { openStationSetup(); navTo('home'); return; }
+        if (!currentStationId) { openStationSetup(); return; }
+        _showView('voting');
+        currentView = 'station';
         initVotingStation();
+        return;
+
       } else if (viewId === 'home') {
         fetchPublicStatus();
+        _showView('home');
+        currentView = 'home';
+        // Stop station sync if leaving station
+        if (stationSyncTimer) { clearInterval(stationSyncTimer); stationSyncTimer = null; }
+        return;
+      } else {
+        _showView(viewId);
       }
+      currentView = viewId;
+    }
+
+    function _showView(viewId) {
+      document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
+      const t = document.getElementById('view-' + viewId);
+      if (t) t.classList.add('active');
     }
 
     function showAdminLogin() { document.getElementById('admin-login-screen').style.display = 'flex'; document.getElementById('admin-app-screen').style.display = 'none'; }
     function showAdminApp() { document.getElementById('admin-login-screen').style.display = 'none'; document.getElementById('admin-app-screen').style.display = 'flex'; loadOverview(); }
     function openStationSetup() { if (currentStationId) document.getElementById('station-select').value = currentStationId; openModal('modal-station'); }
-    function confirmStationSetup() { currentStationId = document.getElementById('station-select').value; sessionStorage.setItem('pemilu_station_id', currentStationId); closeModal('modal-station'); navTo('voting'); }
+    function confirmStationSetup() {
+      currentStationId = document.getElementById('station-select').value;
+      // Always clear previous session data to prevent auth bypass
+      sessionStorage.setItem('pemilu_station_id', currentStationId);
+      sessionStorage.removeItem('pemilu_session_id');
+      currentSessionId = '';
+      currentSessionRole = 'peserta';
+      lastStationStatus = null;
+      stationCardsRendered = false;
+      closeModal('modal-station');
+      _showView('voting');
+      currentView = 'station';
+      initVotingStation();
+    }
 
     // ── PUBLIC STATUS ────────────────────────────────────────────────
     async function fetchPublicStatus() {
@@ -1981,12 +2025,10 @@
             body: JSON.stringify({ action: 'ping', stationId: currentStationId })
           }).catch(() => { });
 
-          // Skip polling when PENDING — realtime handles APPROVED/REJECTED
-          if (lastStationStatus === 'PENDING') return;
-
           // Skip polling when ACTIVE and cards already rendered — nothing to do
           if (lastStationStatus === 'ACTIVE' && stationCardsRendered) return;
 
+          // Always poll — even during PENDING — as fallback when realtime fails/lags
           const data = await fetch(`/api/stations?action=get&stationId=${currentStationId}`).then(r => r.json());
           if (!data.success) return;
 
@@ -1994,16 +2036,23 @@
           const apiStatus = data.status;
           const uiStatus = (apiStatus === 'WAITING' || apiStatus === 'COMPLETED') ? 'IDLE' : apiStatus;
 
-          currentSessionId = data.sessionId || '';
-          currentSessionRole = data.role || 'peserta';
-          if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
+          // Critical: don't revert back to IDLE/WAITING from PENDING via poll
+          // (PENDING is a local UI state — the session table shows WAITING until approved)
+          if (lastStationStatus === 'PENDING' && (uiStatus === 'IDLE' || uiStatus === 'WAITING')) return;
+
+          // Update session vars only when transitioning to ACTIVE
+          if (uiStatus === 'ACTIVE') {
+            currentSessionId = data.sessionId || '';
+            currentSessionRole = data.role || 'peserta';
+            if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
+          }
 
           setStationState(uiStatus);
         } catch (e) { }
       };
 
       doSync();
-      stationSyncTimer = setInterval(doSync, 1500); // 1.5s — fast but avoids flooding
+      stationSyncTimer = setInterval(doSync, 1500); // 1.5s — fast sync with fallback
     }
 
     // ── MASTER STATE SETTER — Single source of truth for station UI ───
@@ -2333,6 +2382,9 @@
           adminToken = data.token;
           localStorage.setItem('pemilu_admin_token', adminToken);
           closeModal('modal-dashboard-auth');
+          // Now show the dashboard view (was withheld until auth confirmed)
+          _showView('dashboard');
+          currentView = 'dashboard';
           subscribeDashboardRealtime();
           startDashboardPolling();
           loadDashStats();
