@@ -1,6 +1,18 @@
 // api/stats.js — Aggregated Statistics with vote_weight SUM (Low Egress)
 import { getSupabaseAdmin } from '../lib/supabase.js';
 
+function parsePingMs(lastPing) {
+  if (!lastPing) return 0;
+  let str = String(lastPing).trim();
+  if (str === '1970-01-01T00:00:00Z' || str.startsWith('1970')) return 0;
+  str = str.replace(' ', 'T');
+  if (!str.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(str)) {
+    str += 'Z';
+  }
+  const ms = new Date(str).getTime();
+  return isNaN(ms) ? 0 : ms;
+}
+
 export default async function handler(req, res) {
   const supabase = getSupabaseAdmin();
   try {
@@ -39,33 +51,57 @@ export default async function handler(req, res) {
     });
 
     // Settings + stations
-    const { data: settings } = await supabase.from('settings').select('key, value');
+    const { data: settings } = await supabase.from('settings').select('key, value, updated_at');
     const settingsMap = {};
-    (settings || []).forEach(s => { settingsMap[s.key] = s.value; });
+    const pingMap = {};
+    (settings || []).forEach(s => {
+      settingsMap[s.key] = s.value;
+      if (s.key.startsWith('ping_')) {
+        pingMap[s.key] = s;
+      }
+    });
 
-    // Only fetch non-COMPLETED sessions (latest per station)
+    // Fetch sessions (latest per station)
     const { data: sessions } = await supabase
       .from('sessions')
       .select('session_id, station_id, status, role, vote_multiplier, created_at')
       .order('created_at', { ascending: false });
 
     const stationMap = {};
+    const nowMs = Date.now();
     (sessions || []).forEach(s => {
       if (!stationMap[s.station_id]) {
+        const pingObj = pingMap[`ping_${s.station_id}`];
+        const lastPingMs = pingObj ? parsePingMs(pingObj.updated_at) : 0;
+        const diffMs = Math.abs(nowMs - lastPingMs);
+        const isOnline = pingObj?.value === 'ONLINE' && lastPingMs > 0 && diffMs < 15000;
+        const displayStatus = (s.status === 'COMPLETED') ? 'WAITING' : s.status;
         stationMap[s.station_id] = {
           sessionId: s.session_id,
           stationId: s.station_id,
-          status: s.status,
+          status: displayStatus,
           role: s.role || 'peserta',
-          voteMultiplier: s.vote_multiplier || 1
+          voteMultiplier: s.vote_multiplier || 1,
+          isOnline: isOnline
         };
       }
     });
 
-    // Filter out stations whose latest session is COMPLETED
-    const activeStations = Object.values(stationMap)
-      .filter(s => s.status !== 'COMPLETED')
-      .sort((a, b) => a.stationId.localeCompare(b.stationId));
+    // Ensure default stations (STATION-01, 02, 03) + any dynamic stations are included
+    const defaultStationIds = ['STATION-01', 'STATION-02', 'STATION-03'];
+    const allStationIds = Array.from(new Set([...defaultStationIds, ...Object.keys(stationMap)]));
+
+    const finalStations = allStationIds.map(stId => {
+      if (stationMap[stId]) return stationMap[stId];
+      return {
+        sessionId: null,
+        stationId: stId,
+        status: 'WAITING',
+        role: 'peserta',
+        voteMultiplier: 1,
+        isOnline: false
+      };
+    }).sort((a, b) => a.stationId.localeCompare(b.stationId));
 
     return res.status(200).json({
       success: true,
@@ -82,7 +118,7 @@ export default async function handler(req, res) {
         panitia: parseInt(settingsMap['votes_panitia'] || '1'),
         guru: parseInt(settingsMap['votes_guru'] || '1')
       },
-      stations: activeStations
+      stations: finalStations
     });
   } catch (err) {
     console.error('Stats API Error:', err);

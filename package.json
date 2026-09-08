@@ -3,13 +3,17 @@
   "version": "2.0.0",
   "description": "Pemilu OSIS Digital — Realtime WebSockets App (Vercel + Supabase + Google Sheets API Sync)",
   "main": "api/status.js",
+  "type": "module",
   "scripts": {
-    "start": "node api/status.js",
-    "dev": "vercel dev"
+    "start": "node dev-server.js",
+    "dev": "vercel dev",
+    "dev:local": "node dev-server.js",
+    "simulate": "node scripts/simulate_pemilu.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.8",
-    "googleapis": "^134.0.0"
+    "googleapis": "^134.0.0",
+    "pg": "^8.23.0"
   },
   "engines": {
     "node": ">=18.0.0"

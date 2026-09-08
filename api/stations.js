@@ -1,5 +1,5 @@
 // api/stations.js — Multi-Station Session & Auth Request Controller
-import { getSupabaseAdmin } from '../lib/supabase.js';
+import { getSupabaseAdmin, writeAuditLog } from '../lib/supabase.js';
 import { randomUUID } from 'crypto';
 
 async function getVoteMultiplier(role, supabase) {
@@ -22,6 +22,34 @@ export default async function handler(req, res) {
   const stationId = req.query.stationId || (req.body && req.body.stationId) || 'STATION-01';
 
   try {
+    // POST action: ping — station heartbeat
+    if (action === 'ping') {
+      const now = new Date().toISOString();
+      await supabase.from('settings').upsert({
+        key: `ping_${stationId}`,
+        value: 'ONLINE',
+        updated_at: now
+      }, { onConflict: 'key' });
+      return res.status(200).json({ success: true, timestamp: now });
+    }
+
+    // POST action: leave — tab closed/navigated away
+    if (action === 'leave') {
+      await supabase.from('settings').upsert({
+        key: `ping_${stationId}`,
+        value: 'OFFLINE',
+        updated_at: '1970-01-01T00:00:00Z'
+      }, { onConflict: 'key' });
+      await supabase.from('sessions')
+        .update({ status: 'COMPLETED' })
+        .eq('station_id', stationId)
+        .in('status', ['ACTIVE', 'WAITING']);
+      await supabase.from('auth_requests')
+        .update({ status: 'REJECTED', updated_at: new Date().toISOString() })
+        .eq('station_id', stationId);
+      return res.status(200).json({ success: true, message: 'Station marked offline and completed.' });
+    }
+
     // GET: current session for this station
     if (action === 'get') {
       const { data: sessions } = await supabase
@@ -32,13 +60,17 @@ export default async function handler(req, res) {
         .limit(1);
 
       const latest = sessions?.[0] || null;
+      const lastPingTime = latest?.last_ping ? new Date(latest.last_ping).getTime() : 0;
+      const isOnline = latest ? (Date.now() - lastPingTime < 30000) : false;
+
       return res.status(200).json({
         success: true,
         stationId,
         sessionId: latest ? (latest.session_id || latest.id) : null,
         status: latest?.status || 'WAITING',
         role: latest?.role || 'peserta',
-        voteMultiplier: latest?.vote_multiplier || 1
+        voteMultiplier: latest?.vote_multiplier || 1,
+        isOnline: isOnline
       });
     }
 
@@ -175,7 +207,7 @@ export default async function handler(req, res) {
         .limit(1);
 
       const currentRole = lastSess?.[0]?.role || 'peserta';
-      const multiplier = lastSess?.[0]?.vote_multiplier || (await getVoteMultiplier(currentRole, supabase));
+      const multiplier = await getVoteMultiplier(currentRole, supabase);
 
       // 2. Mark any previous session for this station as COMPLETED
       await supabase.from('sessions')
@@ -227,19 +259,40 @@ export default async function handler(req, res) {
     if (action === 'resetAll') {
       await supabase.from('sessions').delete().neq('station_id', 'NON_EXISTENT');
       await supabase.from('auth_requests').delete().neq('station_id', 'NON_EXISTENT');
+      await writeAuditLog('STATIONS_RESET', 'Semua sesi bilik di-reset oleh Panitia.');
       return res.status(200).json({ success: true, message: 'Semua sesi station di-reset.' });
+    }
+
+    function parsePingMs(lastPing) {
+      if (!lastPing) return 0;
+      let str = String(lastPing).trim();
+      if (str === '1970-01-01T00:00:00Z' || str.startsWith('1970')) return 0;
+      str = str.replace(' ', 'T');
+      if (!str.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(str)) {
+        str += 'Z';
+      }
+      const ms = new Date(str).getTime();
+      return isNaN(ms) ? 0 : ms;
     }
 
     // GET: all station statuses (for dashboard)
     if (action === 'all') {
       const { data: sessions } = await supabase
         .from('sessions')
-        .select('session_id, station_id, status, role, vote_multiplier, created_at, voted_at')
+        .select('session_id, station_id, status, role, vote_multiplier, created_at, voted_at, last_ping')
         .order('created_at', { ascending: false });
 
       const stationMap = {};
+      const now = Date.now();
       (sessions || []).forEach(s => {
-        if (!stationMap[s.station_id]) stationMap[s.station_id] = s;
+        if (!stationMap[s.station_id]) {
+          const lastPingMs = parsePingMs(s.last_ping);
+          const diffMs = Math.abs(now - lastPingMs);
+          stationMap[s.station_id] = {
+            ...s,
+            isOnline: lastPingMs > 0 && diffMs < 30000
+          };
+        }
       });
 
       const activeStations = Object.values(stationMap)

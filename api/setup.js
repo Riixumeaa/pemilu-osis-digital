@@ -61,6 +61,9 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='sessions' AND column_name='vote_multiplier') THEN
     ALTER TABLE sessions ADD COLUMN vote_multiplier INT DEFAULT 1;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='sessions' AND column_name='last_ping') THEN
+    ALTER TABLE sessions ADD COLUMN last_ping TIMESTAMPTZ DEFAULT NOW();
+  END IF;
 END $$;
 
 -- 4. VOTES

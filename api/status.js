@@ -1,5 +1,5 @@
 // api/status.js — Election Status + Vote Weight Config Controller
-import { getSupabaseAdmin } from '../lib/supabase.js';
+import { getSupabaseAdmin, writeAuditLog } from '../lib/supabase.js';
 
 async function verifyAdmin(token, supabase) {
   if (!token) return false;

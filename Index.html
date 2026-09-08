@@ -1103,6 +1103,45 @@
         font-size: 1.75rem
       }
     }
+
+    /* PRINT / PDF EXPORT ISOLATION RULES (STRICT 1-PAGE A4) */
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 5mm 10mm;
+      }
+
+      html,
+      body {
+        background: #fff !important;
+        color: #000 !important;
+        font-family: system-ui, -apple-system, sans-serif !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+      }
+
+      /* STRICTLY HIDE EVERYTHING IN BODY EXCEPT #print-header TO GUARANTEE 1 SINGLE PAGE */
+      body>*:not(#print-header) {
+        display: none !important;
+      }
+
+      #print-header {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+      }
+
+      #print-header * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    }
   </style>
 </head>
 
@@ -1306,15 +1345,6 @@
         </div>
 
         <div id="tab-hasil" class="tab-content">
-          <!-- PRINT HEADER (ONLY VISIBLE WHEN PRINTING PDF) -->
-          <div id="print-header" class="print-only"
-            style="display:none;margin-bottom:1.5rem;text-align:center;border-bottom:2px solid #333;padding-bottom:1rem">
-            <h1 id="print-title" style="font-size:1.8rem;margin-bottom:.3rem;color:#000">PEMILU OSIS DIGITAL</h1>
-            <h3 style="font-size:1.1rem;color:#444;margin-bottom:.4rem">LAPORAN HASIL PEROLEHAN SUARA</h3>
-            <p id="print-schedule" style="font-size:.9rem;color:#666;margin-bottom:.2rem">Jadwal: —</p>
-            <p id="print-date" style="font-size:.8rem;color:#888">Dicetak pada: —</p>
-          </div>
-
           <div class="flex fxc fxb mb2 no-print">
             <div>
               <h2>Hasil Pemilu</h2>
@@ -1348,6 +1378,26 @@
             <div class="empty">
               <div class="empty-ico">📊</div>
               <p>Memuat hasil...</p>
+            </div>
+          </div>
+
+          <!-- SIGNATORIES CONFIGURATION CARD -->
+          <div class="card mt2 no-print">
+            <div class="flex fxc fxb mb2">
+              <div>
+                <h4 style="margin:0">🖊️ Pengaturan Tanda Tangan Laporan (PDF)</h4>
+                <p class="tsm cmuted" style="margin:.2rem 0 0">Atur hingga 4 penandatangan sah untuk Berita Acara PDF
+                  (Jabatan, Nama, NIP/NIM)</p>
+              </div>
+              <button class="btn btn-sm btn-ghost" type="button" onclick="addSigneeRow()">➕ Tambah
+                Penandatangan</button>
+            </div>
+            <div id="signees-form-container" class="flex fcol gap-sm">
+              <!-- Rendered dynamically via JS -->
+            </div>
+            <div class="mt2 flex fj-end">
+              <button class="btn btn-primary btn-sm" type="button" onclick="saveSigneesConfig()">💾 Simpan Tanda
+                Tangan</button>
             </div>
           </div>
         </div>
@@ -1465,11 +1515,17 @@
             style="background:#fff"></span> STATION-01</div>
         <p style="color:rgba(255,255,255,.82);font-size:1rem;margin-bottom:2rem">Tekan tombol di bawah untuk memulai
           proses autentikasi peserta.</p>
-        <button id="request-auth-btn" class="btn btn-lg"
-          style="background:#fff;color:var(--blue);font-size:1.1rem;padding:1.1rem 3rem;border-radius:var(--r-xl)"
-          onclick="requestAuth()">
-          🔔 Panggil Panitia
-        </button>
+        <div style="display:flex;flex-direction:column;gap:.8rem;align-items:center">
+          <button id="request-auth-btn" class="btn btn-lg"
+            style="background:#fff;color:var(--blue);font-size:1.1rem;padding:1.1rem 3rem;border-radius:var(--r-xl);box-shadow:0 4px 20px rgba(0,0,0,.2)"
+            onclick="enterFullscreen(); requestAuth();">
+            🔔 Panggil Panitia
+          </button>
+          <button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.8);border-color:rgba(255,255,255,.3)"
+            onclick="enterFullscreen()">
+            🖥️ Fullscreen Bilik
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1585,6 +1641,11 @@
             <img id="photo-preview" class="photo-prev hidden" alt="Preview">
           </div>
           <input type="file" id="photo-input" accept="image/*" style="display:none" onchange="handlePhotoSelect(event)">
+          <div id="modal-photo-actions" class="flex gap-sm mt2" style="display:none">
+            <button class="btn btn-sm btn-ghost" type="button"
+              onclick="document.getElementById('photo-input').click()">📷 Ganti Foto</button>
+            <button class="btn btn-sm btn-error" type="button" onclick="clearModalPhoto()">❌ Hapus Foto</button>
+          </div>
           <p id="photo-size-info" class="fhint"></p>
         </div>
       </div>
@@ -1633,12 +1694,36 @@
     </div>
   </div>
 
+  <!-- Dashboard Auth Modal -->
+  <div id="modal-dashboard-auth" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-title">🔐 Akses Dashboard Panitia</div>
+      <div class="modal-body">
+        <p class="tsm cmuted mb2">Masukkan password panitia untuk melanjutkan.</p>
+        <div class="fg">
+          <label class="flabel">Password</label>
+          <input type="password" id="dash-auth-pw" class="finput" placeholder="Masukkan password..."
+            onkeydown="if(event.key==='Enter')doDashLogin()">
+        </div>
+        <div id="dash-auth-error" class="alert-error" style="display:none;margin-top:.75rem">Password salah.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('modal-dashboard-auth')">Batal</button>
+        <button class="btn btn-primary" id="dash-auth-btn" onclick="doDashLogin()">🔓 Masuk Dashboard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRINT HEADER CONTAINER (DIRECT CHILD OF BODY FOR CLEAN PRINT OUTPUT) -->
+  <div id="print-header"></div>
+
   <script>
     // ================================================================
     // PEMILU OSIS DIGITAL — ENGINE v3 (Multi-Role Auth + Vote Weight)
     // ================================================================
     let adminToken = localStorage.getItem('pemilu_admin_token') || '';
     let selectedCandidateId = null;
+    let currentView = 'home';
     let currentStationId = sessionStorage.getItem('pemilu_station_id') || '';
     let currentSessionId = sessionStorage.getItem('pemilu_session_id') || '';
     let currentSessionRole = 'peserta';
@@ -1654,10 +1739,22 @@
     window.addEventListener('DOMContentLoaded', async () => {
       setupVisibilityListener();
       await initSupabaseClient();
-      const hash = location.hash.replace('#', '') || 'home';
-      if (hash === 'voting' && currentStationId) navTo('voting');
-      else if (hash === 'admin') navTo('admin');
-      else if (hash === 'dashboard') navTo('dashboard');
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewParam = urlParams.get('view');
+      const stationParam = urlParams.get('station');
+
+      if (stationParam) {
+        currentStationId = stationParam.toUpperCase();
+        sessionStorage.setItem('pemilu_station_id', currentStationId);
+      }
+
+      const hash = location.hash.replace('#', '') || '';
+      if (viewParam === 'station' || viewParam === 'voting' || hash === 'voting') {
+        if (currentStationId) navTo('voting');
+        else openStationSetup();
+      } else if (hash === 'admin' || viewParam === 'admin') navTo('admin');
+      else if (hash === 'dashboard' || viewParam === 'dashboard') navTo('dashboard');
       else navTo('home');
       fetchPublicStatus();
     });
@@ -1748,6 +1845,7 @@
 
     // ── NAVIGATION ────────────────────────────────────────────────────
     function navTo(viewId) {
+      currentView = viewId === 'voting' ? 'station' : viewId;
       document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
       const t = document.getElementById('view-' + viewId);
       if (t) t.classList.add('active');
@@ -1761,10 +1859,15 @@
         if (adminToken) verifyAdminSession().then(ok => ok ? showAdminApp() : showAdminLogin());
         else showAdminLogin();
       } else if (viewId === 'dashboard') {
-        subscribeDashboardRealtime();
-        startDashboardPolling();
-        loadDashStats();
-        loadAuthRequests();
+        if (adminToken) {
+          verifyAdminSession().then(ok => {
+            if (ok) { subscribeDashboardRealtime(); startDashboardPolling(); loadDashStats(); loadAuthRequests(); }
+            else openDashboardAuth();
+          });
+        } else {
+          openDashboardAuth();
+          return;
+        }
       } else if (viewId === 'voting') {
         if (!currentStationId) { openStationSetup(); navTo('home'); return; }
         initVotingStation();
@@ -1801,8 +1904,82 @@
       return [];
     }
 
+    // ── NETWORK & KIOSK UTILS ──────────────────────────────────────────
+    async function fetchWithRetry(url, options = {}, retries = 3, backoff = 300) {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const res = await fetch(url, options);
+          if (res.ok || i === retries - 1) return res;
+        } catch (err) {
+          if (i === retries - 1) throw err;
+        }
+        await new Promise(r => setTimeout(r, backoff * Math.pow(2, i)));
+      }
+      return fetch(url, options);
+    }
+
+    // Lock Context Menu & Refresh keys when in Station View
+    window.addEventListener('contextmenu', e => {
+      if (currentView === 'station') e.preventDefault();
+    });
+
+    window.addEventListener('keydown', e => {
+      if (currentView === 'station') {
+        const k = e.key.toLowerCase();
+        if (e.key === 'F5' || e.key === 'F12' || (e.ctrlKey && k === 'r') || (e.ctrlKey && e.shiftKey && k === 'i')) {
+          e.preventDefault();
+          toast('Navigasi & tombol pintas dikunci saat sesi bilik aktif.', 'warning');
+        }
+      }
+    });
+
+    // Send instant offline beacon when station tab is closed or navigated away
+    window.addEventListener('pagehide', () => {
+      if (currentView === 'station' && currentStationId) {
+        const url = `/api/stations?action=leave&stationId=${currentStationId}`;
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(url);
+        } else {
+          fetch(url, { method: 'POST', keepalive: true }).catch(() => { });
+        }
+      }
+    });
+
+    // Auto HTML5 Fullscreen helper for station view
+    function enterFullscreen() {
+      if (!document.fullscreenElement && currentView === 'station') {
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) docEl.requestFullscreen().catch(() => { });
+        else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen().catch(() => { });
+      }
+    }
+
+    // Enter fullscreen automatically on first user click in station view
+    window.addEventListener('click', () => {
+      if (currentView === 'station') enterFullscreen();
+    }, { once: false });
+
+    let stationHeartbeatTimer = null;
+    function startStationHeartbeat() {
+      if (stationHeartbeatTimer) clearInterval(stationHeartbeatTimer);
+      const doPing = async () => {
+        if (currentView === 'station' && currentStationId) {
+          try {
+            await fetchWithRetry(`/api/stations`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'ping', stationId: currentStationId })
+            });
+          } catch (e) { }
+        }
+      };
+      doPing();
+      stationHeartbeatTimer = setInterval(doPing, 5000);
+    }
+
     // ── VOTING STATION FLOW ───────────────────────────────────────────
     async function initVotingStation() {
+      startStationHeartbeat();
       subscribeStationRealtime(currentStationId);
       document.getElementById('idle-station-id').innerHTML = `<span class="dot" style="background:#fff"></span> ${currentStationId}`;
       document.getElementById('pending-station-id').innerHTML = `<span class="dot" style="background:#A78BFA"></span> ${currentStationId} — Menunggu...`;
@@ -1833,11 +2010,11 @@
         const rb = document.getElementById('vote-role-badge');
         if (rb) rb.innerHTML = `<span class="dot"></span> ${roleLabels[currentSessionRole] || currentSessionRole}`;
         await renderVotingCards();
-      } else if (status === 'VOTED' || status === 'COMPLETED') {
+      } else if (status === 'VOTED') {
         success.style.display = 'flex';
       } else if (status === 'PENDING') {
         pending.style.display = 'flex';
-      } else { // IDLE, WAITING
+      } else { // IDLE, WAITING, COMPLETED
         idle.style.display = 'flex';
         currentAuthRequestId = null;
         const btn = document.getElementById('request-auth-btn');
@@ -1925,13 +2102,21 @@
         if (data.stations?.length) {
           const roleLabels = { peserta: '🎓 Peserta', panitia: '📋 Panitia', guru: '👩‍🏫 Guru' };
           stCnt.innerHTML = data.stations.map(st => {
-            const isVoted = st.status === 'VOTED' || st.status === 'COMPLETED';
-            const isActive = st.status === 'ACTIVE';
+            const isOnline = st.isOnline === true;
+            const isVoted = st.status === 'VOTED';
+            const isActive = st.status === 'ACTIVE' && isOnline;
+            const isOfflineActive = st.status === 'ACTIVE' && !isOnline;
+
             return `
             <div class="station-card ${isActive ? 's-active' : isVoted ? 's-voted' : 's-waiting'}">
-              <div style="font-weight:800;font-size:1.15rem">${st.stationId}</div>
-              <div class="badge ${isActive ? 'badge-running' : isVoted ? 'badge-finished' : 'badge-not_started'}">
-                <span class="dot"></span> ${isActive ? '🟢 SEDANG MEMILIH' : isVoted ? '✓ PEMILIHAN SELESAI' : '🟡 MENUNGGU PANITIA'}
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div style="font-weight:800;font-size:1.15rem">${st.stationId}</div>
+                <span class="badge ${isOnline ? 'badge-running' : 'badge-finished'}" style="font-size:.65rem">
+                  <span class="dot" style="background:${isOnline ? '#16A34A' : '#DC2626'}"></span> ${isOnline ? 'ONLINE' : '🔴 OFFLINE'}
+                </span>
+              </div>
+              <div class="badge ${isActive ? 'badge-running' : isVoted ? 'badge-finished' : isOfflineActive ? 'badge-not_started' : 'badge-not_started'}" style="margin-top:.4rem">
+                <span class="dot"></span> ${isActive ? '🟢 SEDANG MEMILIH' : isVoted ? '✓ PEMILIHAN SELESAI' : isOfflineActive ? '⚠️ TERPUTUS / TAB DITUTUP' : '🟡 MENUNGGU PANITIA'}
               </div>
               <div class="tsm cmuted">${roleLabels[st.role || 'peserta'] || st.role} (×${st.voteMultiplier || 1})</div>
               
@@ -2078,6 +2263,72 @@
       if (tabId === 'log') loadLogs();
     }
 
+    // ── DASHBOARD AUTH ──────────────────────────────────────────────
+    function openDashboardAuth() {
+      document.getElementById('dash-auth-pw').value = '';
+      document.getElementById('dash-auth-error').style.display = 'none';
+      openModal('modal-dashboard-auth');
+    }
+
+    async function doDashLogin() {
+      const pw = document.getElementById('dash-auth-pw').value;
+      if (!pw) return;
+      const btn = document.getElementById('dash-auth-btn');
+      const errEl = document.getElementById('dash-auth-error');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+      errEl.style.display = 'none';
+      try {
+        const data = await fetch('/api/auth', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw })
+        }).then(r => r.json());
+        if (data.success) {
+          adminToken = data.token;
+          localStorage.setItem('pemilu_admin_token', adminToken);
+          closeModal('modal-dashboard-auth');
+          subscribeDashboardRealtime();
+          startDashboardPolling();
+          loadDashStats();
+          loadAuthRequests();
+        } else {
+          errEl.style.display = 'block';
+        }
+      } catch (e) { errEl.textContent = 'Koneksi gagal.'; errEl.style.display = 'block'; }
+      finally { btn.disabled = false; btn.innerHTML = '🔓 Masuk Dashboard'; }
+    }
+
+    // ── AUDIT LOG ───────────────────────────────────────────────────
+    async function loadLogs() {
+      const list = document.getElementById('log-list');
+      if (!list) return;
+      list.innerHTML = '<div class="empty"><span class="spinner"></span><p>Memuat log...</p></div>';
+      try {
+        const data = await fetch('/api/logs?limit=100').then(r => r.json());
+        if (!data.success || !data.logs?.length) {
+          list.innerHTML = '<div class="empty"><div class="empty-ico">📋</div><p>Belum ada log aktivitas.</p></div>';
+          return;
+        }
+        list.innerHTML = `
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+            <thead style="position:sticky;top:0;background:var(--surface)">
+              <tr style="border-bottom:2px solid var(--border)">
+                <th style="text-align:left;padding:.5rem .75rem;color:var(--muted)">Waktu</th>
+                <th style="text-align:left;padding:.5rem .75rem;color:var(--muted)">Tipe</th>
+                <th style="text-align:left;padding:.5rem .75rem;color:var(--muted)">Keterangan</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.logs.map(log => `
+                <tr style="border-bottom:1px solid var(--border)">
+                  <td style="padding:.45rem .75rem;color:var(--muted);white-space:nowrap">${fmtDateTime(log.timestamp)}</td>
+                  <td style="padding:.45rem .75rem"><span class="badge badge-running" style="font-size:.65rem">${escapeHtml(log.type)}</span></td>
+                  <td style="padding:.45rem .75rem">${escapeHtml(log.message)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      } catch (e) { list.innerHTML = '<div class="empty"><p>Gagal memuat log.</p></div>'; }
+    }
+
     function fmtDateTime(isoStr) {
       if (!isoStr) return '—';
       return new Date(isoStr).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
@@ -2185,17 +2436,23 @@
         </div>`).join('');
     }
 
+    let modalPhotoRemoved = false;
+
     function openAddModal() {
+      modalPhotoRemoved = false;
       document.getElementById('edit-id').value = '';
       document.getElementById('modal-cand-title').innerText = '➕ Tambah Pasangan Calon';
       ['cand-number', 'cand-chairman', 'cand-vice'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('photo-preview').classList.add('hidden');
       document.getElementById('photo-placeholder').classList.remove('hidden');
+      const actions = document.getElementById('modal-photo-actions');
+      if (actions) actions.style.display = 'none';
       selectedPhotoBase64 = null;
       openModal('modal-add-cand');
     }
 
     async function openEditCandModal(id) {
+      modalPhotoRemoved = false;
       const cands = await getCandidatesCached();
       const cand = cands.find(c => String(c.id) === String(id));
       if (!cand) return toast('Kandidat tidak ditemukan!', 'error');
@@ -2206,23 +2463,39 @@
       document.getElementById('cand-vice').value = cand.vice;
       const prev = document.getElementById('photo-preview');
       const placeholder = document.getElementById('photo-placeholder');
+      const actions = document.getElementById('modal-photo-actions');
       if (cand.pairImageUrl) {
         prev.src = cand.pairImageUrl; prev.classList.remove('hidden');
         placeholder.classList.add('hidden');
+        if (actions) actions.style.display = 'flex';
       } else {
         prev.classList.add('hidden'); placeholder.classList.remove('hidden');
+        if (actions) actions.style.display = 'none';
       }
       selectedPhotoBase64 = null;
       openModal('modal-add-cand');
     }
 
+    function clearModalPhoto() {
+      modalPhotoRemoved = true;
+      selectedPhotoBase64 = '';
+      document.getElementById('photo-preview').classList.add('hidden');
+      document.getElementById('photo-placeholder').classList.remove('hidden');
+      const actions = document.getElementById('modal-photo-actions');
+      if (actions) actions.style.display = 'none';
+      toast('Foto kandidat akan dihapus saat disimpan.', 'info');
+    }
+
     function handlePhotoSelect(e) {
       const file = e.target.files[0]; if (!file) return;
       compressImage(file, 800, 0.8, b64 => {
+        modalPhotoRemoved = false;
         selectedPhotoBase64 = b64;
         const prev = document.getElementById('photo-preview');
         prev.src = b64; prev.classList.remove('hidden');
         document.getElementById('photo-placeholder').classList.add('hidden');
+        const actions = document.getElementById('modal-photo-actions');
+        if (actions) actions.style.display = 'flex';
       });
     }
 
@@ -2241,9 +2514,16 @@
       const btn = document.getElementById('save-cand-btn');
       btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
       try {
+        let finalPhoto = undefined;
+        if (modalPhotoRemoved) {
+          finalPhoto = '';
+        } else if (selectedPhotoBase64) {
+          finalPhoto = selectedPhotoBase64;
+        }
+
         const payload = {
           action: editId ? 'update' : 'add',
-          candidate: { id: editId || undefined, number: parseInt(number), chairman, vice, pairImageUrl: selectedPhotoBase64 || undefined }
+          candidate: { id: editId || undefined, number: parseInt(number), chairman, vice, pairImageUrl: finalPhoto }
         };
         const data = await fetch('/api/candidates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json());
         if (data.success) {
@@ -2293,6 +2573,7 @@
       if (data.success) document.getElementById('kontrol-status').innerHTML = `<p>Status: <strong>${data.status}</strong></p><p>Judul: <strong>${escapeHtml(data.title)}</strong></p>`;
     }
     async function loadHasil() {
+      renderSigneesForm();
       const data = await fetch('/api/stats').then(r => r.json());
       if (!data.success) return;
       document.getElementById('hasil-total').innerText = data.totalVotes;
@@ -2341,6 +2622,89 @@
       }
     }
 
+    // ── SIGNATORIES CONFIG ────────────────────────────────────────────
+    const DEFAULT_SIGNEES = [
+      { role: 'Ketua Panitia Pemilihan', name: '', idNum: '' },
+      { role: 'Pembina OSIS / Saksi', name: '', idNum: '' }
+    ];
+
+    function getSigneesConfig() {
+      try {
+        const raw = localStorage.getItem('pemilu_pdf_signees');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed.slice(0, 4);
+        }
+      } catch (e) { }
+      return DEFAULT_SIGNEES;
+    }
+
+    function renderSigneesForm() {
+      const cnt = document.getElementById('signees-form-container');
+      if (!cnt) return;
+      const signees = getSigneesConfig();
+      cnt.innerHTML = signees.map((s, i) => `
+        <div class="card" style="padding:.75rem;background:var(--surface2);border:1px solid var(--border)">
+          <div class="flex fxc fxb mb1">
+            <span style="font-weight:700;font-size:.85rem;color:var(--blue)">Penandatangan #${i + 1}</span>
+            ${signees.length > 1 ? `<button class="btn btn-sm btn-error" type="button" onclick="removeSigneeRow(${i})" style="padding:.1rem .4rem;font-size:.75rem">❌ Hapus</button>` : ''}
+          </div>
+          <div class="frow" style="gap:.5rem">
+            <div class="fg" style="flex:1">
+              <label class="flabel" style="font-size:.75rem">Jabatan / Peran *</label>
+              <input type="text" id="sig-role-${i}" class="finput finput-sm" value="${escapeHtml(s.role || '')}" placeholder="Contoh: Ketua Panitia">
+            </div>
+            <div class="fg" style="flex:1">
+              <label class="flabel" style="font-size:.75rem">Nama Lengkap</label>
+              <input type="text" id="sig-name-${i}" class="finput finput-sm" value="${escapeHtml(s.name || '')}" placeholder="Nama lengkap">
+            </div>
+            <div class="fg" style="flex:1">
+              <label class="flabel" style="font-size:.75rem">NIP / NIM / NIS (Opsional)</label>
+              <input type="text" id="sig-id-${i}" class="finput finput-sm" value="${escapeHtml(s.idNum || '')}" placeholder="Nomor ID/NIP">
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function addSigneeRow() {
+      const current = getSigneesFromInputs();
+      if (current.length >= 4) return toast('Maksimal 4 penandatangan!', 'warning');
+      current.push({ role: 'Saksi ' + (current.length + 1), name: '', idNum: '' });
+      localStorage.setItem('pemilu_pdf_signees', JSON.stringify(current));
+      renderSigneesForm();
+    }
+
+    function removeSigneeRow(index) {
+      const current = getSigneesFromInputs();
+      if (current.length <= 1) return toast('Minimal 1 penandatangan!', 'warning');
+      current.splice(index, 1);
+      localStorage.setItem('pemilu_pdf_signees', JSON.stringify(current));
+      renderSigneesForm();
+    }
+
+    function getSigneesFromInputs() {
+      const signees = [];
+      for (let i = 0; i < 4; i++) {
+        const r = document.getElementById(`sig-role-${i}`);
+        if (!r) continue;
+        const n = document.getElementById(`sig-name-${i}`);
+        const id = document.getElementById(`sig-id-${i}`);
+        signees.push({
+          role: r.value.trim() || 'Saksi',
+          name: n ? n.value.trim() : '',
+          idNum: id ? id.value.trim() : ''
+        });
+      }
+      return signees.length > 0 ? signees : DEFAULT_SIGNEES;
+    }
+
+    function saveSigneesConfig() {
+      const signees = getSigneesFromInputs();
+      localStorage.setItem('pemilu_pdf_signees', JSON.stringify(signees));
+      toast('Pengaturan tanda tangan disimpan!', 'success');
+    }
+
     async function loadLogs() {
       const cnt = document.getElementById('log-list');
       cnt.innerHTML = '<div class="empty"><p>Log belum tersedia.</p></div>';
@@ -2370,84 +2734,86 @@
         legendHtml = breakdown.map((b, i) => {
           const c = colors[i % colors.length], s = cum;
           cum += parseFloat(b.percentage) || 0; stops.push(`${c} ${s}% ${cum}%`);
-          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#F8FAFC;border-radius:6px;margin-bottom:6px;border:1px solid #E2E8F0">
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="width:14px;height:14px;border-radius:4px;background:${c};flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,0.2)"></span>
-              <span style="font-size:12px;font-weight:700;color:#1E293B">Paslon #${b.number}</span>
-              <span style="font-size:11.5px;color:#475569">(${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)})</span>
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:#F8FAFC;border-radius:4px;margin-bottom:4px;border:1px solid #E2E8F0">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="width:12px;height:12px;border-radius:3px;background:${c};flex-shrink:0"></span>
+              <span style="font-size:11px;font-weight:700;color:#1E293B">Paslon #${b.number}</span>
+              <span style="font-size:10.5px;color:#475569">(${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)})</span>
             </div>
-            <div style="font-size:12px;font-weight:800;color:${c}">${b.votes} Suara (${b.percentage}%)</div>
+            <div style="font-size:11px;font-weight:800;color:${c}">${b.votes} Suara (${b.percentage}%)</div>
           </div>`;
         }).join('');
         conicStops = stops.join(', ');
       }
 
       const barHtml = breakdown.map((b, i) => `
-        <div style="margin-bottom:12px">
-          <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px">
+        <div style="margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
             <span style="font-weight:700;color:#1E293B">Pasangan #${b.number} — ${escapeHtml(b.chairman)} &amp; ${escapeHtml(b.vice)}</span>
             <span style="font-weight:800;color:${colors[i % colors.length]}">${b.percentage}% &bull; ${b.votes} suara</span>
           </div>
-          <div style="background:#E2E8F0;border-radius:6px;height:16px;overflow:hidden;padding:2px">
-            <div style="height:100%;width:${b.percentage}%;background:${colors[i % colors.length]};border-radius:4px;transition:width .3s"></div>
+          <div style="background:#E2E8F0;border-radius:4px;height:10px;overflow:hidden;padding:1px">
+            <div style="height:100%;width:${b.percentage}%;background:${colors[i % colors.length]};border-radius:3px"></div>
           </div>
         </div>`).join('');
 
       const printDateStr = new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' });
+      const signees = getSigneesConfig();
+      const gridCols = signees.length > 2 ? 2 : Math.min(signees.length, 2);
 
       const ph = document.getElementById('print-header');
       if (ph) ph.innerHTML = `
-        <div style="text-align:center;margin-bottom:16px;padding-bottom:14px;border-bottom:3px double #1E40AF">
-          <div style="font-size:10px;font-weight:800;color:#64748B;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:2px">ORGANISASI SISWA INTRA SEKOLAH (OSIS)</div>
-          <h1 style="font-size:22px;color:#1E40AF;margin:2px 0 4px;font-weight:900;letter-spacing:-0.5px">${escapeHtml(title)}</h1>
-          <div style="font-size:12px;font-weight:800;color:#0F172A;letter-spacing:1.5px;background:#EFF6FF;display:inline-block;padding:3px 14px;border-radius:12px;border:1px solid #BFDBFE">BERITA ACARA HASIL PEROLEHAN SUARA</div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:11px;color:#334155">
-          <div>📌 <strong>Status Pemilu:</strong> SELESAI / RESMI</div>
-          <div>📅 <strong>Jadwal Pelaksanaan:</strong> ${schedText}</div>
-          <div>📥 <strong>Total Suara Masuk:</strong> <span style="font-size:12px;font-weight:800;color:#1E40AF">${totalVotes} Suara</span></div>
-          <div>🖨️ <strong>Waktu Cetak Dokumen:</strong> ${printDateStr}</div>
-        </div>
-
-        ${winner ? `
-        <div style="background:linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);border:2px solid #2563EB;border-radius:10px;padding:12px 18px;margin-bottom:18px;text-align:center;box-shadow:0 2px 8px rgba(37,99,235,0.1)">
-          <div style="font-size:10px;color:#1D4ED8;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:2px">🏆 PASANGAN PASLON DENGAN PEROLEHAN SUARA TERBANYAK</div>
-          <div style="font-size:20px;font-weight:900;color:#1E3A8A;margin:2px 0">Pasangan #${winner.number} &mdash; ${escapeHtml(winner.chairman)} &amp; ${escapeHtml(winner.vice)}</div>
-          <div style="font-size:13px;font-weight:700;color:#1D4ED8">${winner.votes} Suara (${winner.percentage}% dari total partisipasi)</div>
-        </div>` : ''}
-
-        <div style="display:flex;gap:24px;align-items:center;margin-bottom:20px;background:#FFF;border:1px solid #E2E8F0;border-radius:10px;padding:16px">
-          <div style="text-align:center;flex-shrink:0">
-            <div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(${conicStops});margin:0 auto 8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);border:3px solid #FFF"></div>
-            <div style="font-size:11px;font-weight:800;color:#1E293B">Visual Diagram Suara</div>
+        <div style="-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#fff;padding:0;color:#000;font-family:system-ui,sans-serif">
+          <div style="text-align:center;margin-bottom:10px;padding-bottom:8px;border-bottom:2px double #1E40AF">
+            <div style="font-size:9px;font-weight:800;color:#64748B;letter-spacing:2px;text-transform:uppercase">ORGANISASI SISWA INTRA SEKOLAH (OSIS)</div>
+            <h1 style="font-size:18px;color:#1E40AF;margin:2px 0;font-weight:900">${escapeHtml(title)}</h1>
+            <div style="font-size:11px;font-weight:800;color:#0F172A;letter-spacing:1px;background:#EFF6FF;-webkit-print-color-adjust:exact;print-color-adjust:exact;display:inline-block;padding:2px 10px;border-radius:10px;border:1px solid #BFDBFE">BERITA ACARA HASIL PEROLEHAN SUARA</div>
           </div>
-          <div style="flex:1">
-            <div style="font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Ringkasan Perolehan</div>
-            ${legendHtml}
-          </div>
-        </div>
 
-        <div style="border:1px solid #E2E8F0;border-radius:10px;padding:14px;margin-bottom:24px;background:#FFF">
-          <div style="font-size:12px;font-weight:800;color:#0F172A;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #F1F5F9;padding-bottom:6px">Rincian Grafik Perolehan Suara</div>
-          ${barHtml}
-        </div>
-
-        <div style="display:flex;justify-content:space-between;margin-top:30px;padding-top:16px;font-size:11px;color:#334155;page-break-inside:avoid">
-          <div style="text-align:center;width:200px">
-            <div>Ketua Panitia Pemilihan</div>
-            <div style="height:50px"></div>
-            <div style="font-weight:800;border-bottom:1px solid #333;display:inline-block;padding:0 15px">( ........................................ )</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#F8FAFC;-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid #E2E8F0;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:10.5px;color:#334155">
+            <div>📌 <strong>Status Pemilu:</strong> SELESAI / RESMI</div>
+            <div>📅 <strong>Jadwal Pelaksanaan:</strong> ${schedText}</div>
+            <div>📥 <strong>Total Suara Masuk:</strong> <span style="font-size:11px;font-weight:800;color:#1E40AF">${totalVotes} Suara</span></div>
+            <div>🖨️ <strong>Waktu Cetak:</strong> ${printDateStr}</div>
           </div>
-          <div style="text-align:center;width:200px">
-            <div>Pembina OSIS / Saksi</div>
-            <div style="height:50px"></div>
-            <div style="font-weight:800;border-bottom:1px solid #333;display:inline-block;padding:0 15px">( ........................................ )</div>
-          </div>
-        </div>
 
-        <div style="border-top:1px solid #E2E8F0;margin-top:20px;padding-top:8px;font-size:9.5px;color:#94A3B8;text-align:center">
-          Dokumen Berita Acara ini secara sah dihasilkan oleh Sistem Pemilu Digital OSIS &bull; Tanggal Cetak: ${printDateStr}
+          ${winner ? `
+          <div style="background:#EFF6FF;-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1.5px solid #2563EB;border-radius:8px;padding:8px 12px;margin-bottom:10px;text-align:center">
+            <div style="font-size:9px;color:#1D4ED8;font-weight:800;text-transform:uppercase;letter-spacing:1px">🏆 PASANGAN PASLON DENGAN PEROLEHAN SUARA TERBANYAK</div>
+            <div style="font-size:16px;font-weight:900;color:#1E3A8A;margin:2px 0">Pasangan #${winner.number} &mdash; ${escapeHtml(winner.chairman)} &amp; ${escapeHtml(winner.vice)}</div>
+            <div style="font-size:11.5px;font-weight:700;color:#1D4ED8">${winner.votes} Suara (${winner.percentage}% dari total partisipasi)</div>
+          </div>` : ''}
+
+          <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;background:#FFF;border:1px solid #E2E8F0;border-radius:8px;padding:10px">
+            <div style="text-align:center;flex-shrink:0">
+              <div style="width:95px;height:95px;border-radius:50%;background:conic-gradient(${conicStops});-webkit-print-color-adjust:exact;print-color-adjust:exact;margin:0 auto 4px;box-shadow:0 2px 8px rgba(0,0,0,0.12);border:2px solid #FFF"></div>
+              <div style="font-size:10px;font-weight:800;color:#1E293B">Diagram Suara</div>
+            </div>
+            <div style="flex:1">
+              <div style="font-size:10px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Ringkasan Perolehan</div>
+              ${legendHtml}
+            </div>
+          </div>
+
+          <div style="border:1px solid #E2E8F0;border-radius:8px;padding:10px;margin-bottom:12px;background:#FFF">
+            <div style="font-size:11px;font-weight:800;color:#0F172A;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #F1F5F9;padding-bottom:4px">Rincian Grafik Perolehan Suara</div>
+            ${barHtml}
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(${gridCols}, 1fr);gap:16px;margin-top:14px;page-break-inside:avoid">
+            ${signees.map(s => `
+              <div style="text-align:center">
+                <div style="font-size:10px;font-weight:700;color:#334155">${escapeHtml(s.role || 'Saksi')}</div>
+                <div style="height:34px"></div>
+                <div style="font-weight:800;font-size:10.5px;color:#0F172A;border-bottom:1px solid #333;display:inline-block;padding:0 8px">${escapeHtml(s.name || '( ........................................ )')}</div>
+                ${s.idNum ? `<div style="font-size:8.5px;color:#64748B;margin-top:2px">${escapeHtml(s.idNum)}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+
+          <div style="border-top:1px solid #E2E8F0;margin-top:10px;padding-top:4px;font-size:8.5px;color:#94A3B8;text-align:center">
+            Dokumen Berita Acara ini secara sah dihasilkan oleh Sistem Pemilu Digital OSIS &bull; Tanggal Cetak: ${printDateStr}
+          </div>
         </div>`;
 
       window.print();
