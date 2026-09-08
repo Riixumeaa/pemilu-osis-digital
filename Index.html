@@ -1789,30 +1789,30 @@
         try { supabaseClient.removeChannel(realtimeChannel); } catch (e) { }
         realtimeChannel = null;
       }
-      // Use server-side filter for reliable push delivery
       realtimeChannel = supabaseClient
         .channel('station_rt_' + stationId)
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'sessions', filter: `station_id=eq.${stationId}` },
           (p) => {
             if (!p.new) return;
-            currentSessionId = p.new.session_id || '';
-            currentSessionRole = p.new.role || 'peserta';
-            if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
             const s = p.new.status;
-            if (s === 'COMPLETED' || s === 'WAITING') updateVotingStationUI('IDLE');
-            else updateVotingStationUI(s);
+            // Only update session vars when NOT already in a superior state driven by this change
+            if (s === 'ACTIVE' || s === 'VOTED') {
+              currentSessionId = p.new.session_id || '';
+              currentSessionRole = p.new.role || 'peserta';
+              if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
+            }
+            if (s === 'COMPLETED' || s === 'WAITING') setStationState('IDLE');
+            else setStationState(s);
           })
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'auth_requests', filter: `station_id=eq.${stationId}` },
           (p) => {
             if (!p.new) return;
-            if (p.new.status === 'APPROVED') {
-              // Wait 500ms for session INSERT to be committed, then fetch fresh state
-              setTimeout(() => initVotingStation(), 500);
-            } else if (p.new.status === 'REJECTED') {
-              updateVotingStationUI('IDLE');
+            if (p.new.status === 'REJECTED') {
+              setStationState('IDLE');
             }
+            // APPROVED: session INSERT will fire the sessions listener above — no need to do anything here
           })
         .subscribe((status) => {
           console.log('[RT Station]', stationId, status);
@@ -1964,79 +1964,102 @@
       if (currentView === 'station') enterFullscreen();
     }, { once: false });
 
-    let stationHeartbeatTimer = null;
     let stationSyncTimer = null;
     let lastStationStatus = null;
+    let stationCardsRendered = false; // guard: prevent duplicate card render
 
     function startStationSync() {
-      if (stationHeartbeatTimer) clearInterval(stationHeartbeatTimer);
       if (stationSyncTimer) clearInterval(stationSyncTimer);
 
-      const checkSync = async () => {
-        if (currentView === 'station' && currentStationId) {
-          try {
-            // Heartbeat ping
-            fetch(`/api/stations`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'ping', stationId: currentStationId })
-            }).catch(() => { });
+      const doSync = async () => {
+        if (currentView !== 'station' || !currentStationId) return;
+        try {
+          // Fire-and-forget heartbeat ping (does not block UI)
+          fetch(`/api/stations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'ping', stationId: currentStationId })
+          }).catch(() => { });
 
-            // Fetch session status (ultra-lightweight payload ~80 bytes)
-            const data = await fetch(`/api/stations?action=get&stationId=${currentStationId}`).then(r => r.json());
-            if (data.success) {
-              currentSessionId = data.sessionId || '';
-              currentSessionRole = data.role || 'peserta';
-              if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
-              updateVotingStationUI(data.status);
-            }
-          } catch (e) { }
-        }
+          // Skip polling when PENDING — realtime handles APPROVED/REJECTED
+          if (lastStationStatus === 'PENDING') return;
+
+          // Skip polling when ACTIVE and cards already rendered — nothing to do
+          if (lastStationStatus === 'ACTIVE' && stationCardsRendered) return;
+
+          const data = await fetch(`/api/stations?action=get&stationId=${currentStationId}`).then(r => r.json());
+          if (!data.success) return;
+
+          // Map API status → UI state
+          const apiStatus = data.status;
+          const uiStatus = (apiStatus === 'WAITING' || apiStatus === 'COMPLETED') ? 'IDLE' : apiStatus;
+
+          currentSessionId = data.sessionId || '';
+          currentSessionRole = data.role || 'peserta';
+          if (currentSessionId) sessionStorage.setItem('pemilu_session_id', currentSessionId);
+
+          setStationState(uiStatus);
+        } catch (e) { }
       };
 
-      checkSync();
-      stationSyncTimer = setInterval(checkSync, 1000); // 1.0s fast sync
+      doSync();
+      stationSyncTimer = setInterval(doSync, 1500); // 1.5s — fast but avoids flooding
     }
 
-    // ── VOTING STATION FLOW ───────────────────────────────────────────
-    async function initVotingStation() {
-      const idle = document.getElementById('vote-idle');
-      if (idle) idle.style.display = 'flex'; // Immediately display station screen
-      document.getElementById('idle-station-id').innerHTML = `<span class="dot" style="background:#fff"></span> ${currentStationId}`;
-      document.getElementById('pending-station-id').innerHTML = `<span class="dot" style="background:#A78BFA"></span> ${currentStationId} — Menunggu...`;
-      document.getElementById('vote-station-tag').innerText = currentStationId;
+    // ── MASTER STATE SETTER — Single source of truth for station UI ───
+    let _settingState = false;
+    async function setStationState(status) {
+      if (status === lastStationStatus && status !== 'VOTED') return; // deduplicate
+      if (status === 'ACTIVE' && lastStationStatus === 'ACTIVE') return; // already active
+      if (_settingState && status === 'ACTIVE') return; // prevent concurrent ACTIVE transitions
+      _settingState = status === 'ACTIVE';
 
-      subscribeStationRealtime(currentStationId);
-      startStationSync();
-    }
-
-    async function updateVotingStationUI(status) {
-      if (lastStationStatus === status && status !== 'ACTIVE') return;
       lastStationStatus = status;
-
       const idle = document.getElementById('vote-idle');
       const pending = document.getElementById('vote-pending');
       const select = document.getElementById('vote-select-screen');
       const success = document.getElementById('vote-success-screen');
+
+      if (!idle || !pending || !select || !success) { _settingState = false; return; }
+
       idle.style.display = pending.style.display = select.style.display = success.style.display = 'none';
 
       if (status === 'ACTIVE') {
+        stationCardsRendered = false;
         select.style.display = 'flex';
-        // Role badge
         const roleLabels = { peserta: '🎓 Sesi Peserta', panitia: '📋 Sesi Panitia', guru: '👩‍🏫 Sesi Guru' };
         const rb = document.getElementById('vote-role-badge');
         if (rb) rb.innerHTML = `<span class="dot"></span> ${roleLabels[currentSessionRole] || currentSessionRole}`;
         await renderVotingCards();
+        stationCardsRendered = true;
       } else if (status === 'VOTED') {
+        stationCardsRendered = false;
         success.style.display = 'flex';
       } else if (status === 'PENDING') {
         pending.style.display = 'flex';
-      } else { // IDLE, WAITING, COMPLETED
+      } else { // IDLE
+        stationCardsRendered = false;
         idle.style.display = 'flex';
         currentAuthRequestId = null;
         const btn = document.getElementById('request-auth-btn');
         if (btn) { btn.disabled = false; btn.innerHTML = '🔔 Panggil Panitia'; }
       }
+      _settingState = false;
+    }
+
+    // ── VOTING STATION FLOW ───────────────────────────────────────────
+    async function initVotingStation() {
+      lastStationStatus = null; // Reset state on (re)init
+      stationCardsRendered = false;
+      document.getElementById('idle-station-id').innerHTML = `<span class="dot" style="background:#fff"></span> ${currentStationId}`;
+      document.getElementById('pending-station-id').innerHTML = `<span class="dot" style="background:#A78BFA"></span> ${currentStationId} — Menunggu...`;
+      document.getElementById('vote-station-tag').innerText = currentStationId;
+      // Show idle screen immediately while syncing
+      const idle = document.getElementById('vote-idle');
+      if (idle) idle.style.display = 'flex';
+
+      subscribeStationRealtime(currentStationId);
+      startStationSync();
     }
 
     async function requestAuth() {
@@ -2049,9 +2072,16 @@
         }).then(r => r.json());
         if (data.success) {
           currentAuthRequestId = data.requestId;
-          updateVotingStationUI('PENDING');
-        } else { btn.disabled = false; btn.innerHTML = '🔔 Panggil Panitia'; toast(data.message || 'Gagal mengirim.', 'error'); }
-      } catch (e) { btn.disabled = false; btn.innerHTML = '🔔 Panggil Panitia'; toast('Koneksi bermasalah.', 'error'); }
+          // Immediately lock UI to PENDING — polling is paused while in this state
+          await setStationState('PENDING');
+        } else {
+          btn.disabled = false; btn.innerHTML = '🔔 Panggil Panitia';
+          toast(data.message || 'Gagal mengirim.', 'error');
+        }
+      } catch (e) {
+        btn.disabled = false; btn.innerHTML = '🔔 Panggil Panitia';
+        toast('Koneksi bermasalah.', 'error');
+      }
     }
 
     async function renderVotingCards() {
