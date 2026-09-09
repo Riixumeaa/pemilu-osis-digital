@@ -70,7 +70,8 @@ export default async function handler(req, res) {
         status: latest?.status || 'WAITING',
         role: latest?.role || 'peserta',
         voteMultiplier: latest?.vote_multiplier || 1,
-        isOnline: isOnline
+        isOnline: isOnline,
+        createdAt: latest?.created_at || null
       });
     }
 

@@ -1915,8 +1915,10 @@
     function showAdminLogin() { document.getElementById('admin-login-screen').style.display = 'flex'; document.getElementById('admin-app-screen').style.display = 'none'; }
     function showAdminApp() { document.getElementById('admin-login-screen').style.display = 'none'; document.getElementById('admin-app-screen').style.display = 'flex'; loadOverview(); }
     function openStationSetup() { if (currentStationId) document.getElementById('station-select').value = currentStationId; openModal('modal-station'); }
+    let stationSetupTime = 0;
     function confirmStationSetup() {
       currentStationId = document.getElementById('station-select').value;
+      stationSetupTime = Date.now(); // Record exact time device opened station
       // Always clear previous session data to prevent auth bypass
       sessionStorage.setItem('pemilu_station_id', currentStationId);
       sessionStorage.removeItem('pemilu_session_id');
@@ -2030,7 +2032,16 @@
           if (!data.success) return;
 
           // Map API status → UI state
-          const apiStatus = data.status;
+          let apiStatus = data.status;
+
+          // Security Guard: Ignore stale pre-existing ACTIVE sessions created before this device set up the station
+          if (apiStatus === 'ACTIVE' && data.createdAt && stationSetupTime > 0) {
+            const createdMs = new Date(data.createdAt).getTime();
+            if (createdMs < stationSetupTime - 2000) {
+              apiStatus = 'WAITING'; // Force to IDLE ("Panggil Panitia") because session predates device setup
+            }
+          }
+
           const uiStatus = (apiStatus === 'WAITING' || apiStatus === 'COMPLETED') ? 'IDLE' : apiStatus;
 
           // Critical: don't revert back to IDLE/WAITING from PENDING via poll

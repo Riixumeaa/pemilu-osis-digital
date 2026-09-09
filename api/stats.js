@@ -87,20 +87,11 @@ export default async function handler(req, res) {
       }
     });
 
-    // Ensure default stations (STATION-01, 02, 03) + any dynamic stations are included
-    const defaultStationIds = ['STATION-01', 'STATION-02', 'STATION-03'];
-    const allStationIds = Array.from(new Set([...defaultStationIds, ...Object.keys(stationMap)]));
-
-    const finalStations = allStationIds.map(stId => {
-      if (stationMap[stId]) return stationMap[stId];
-      return {
-        sessionId: null,
-        stationId: stId,
-        status: 'WAITING',
-        role: 'peserta',
-        voteMultiplier: 1,
-        isOnline: false
-      };
+    // Filter stations: only include stations that are ONLINE or have an ACTIVE/VOTED session (disconnected/offline stations vanish from Kontrol Bilik)
+    const finalStations = Object.values(stationMap).filter(st => {
+      if (st.isOnline) return true;
+      if (st.status === 'ACTIVE' || st.status === 'VOTED') return true;
+      return false;
     }).sort((a, b) => a.stationId.localeCompare(b.stationId));
 
     return res.status(200).json({
