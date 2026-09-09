@@ -2025,10 +2025,7 @@
             body: JSON.stringify({ action: 'ping', stationId: currentStationId })
           }).catch(() => { });
 
-          // Skip polling when ACTIVE and cards already rendered — nothing to do
-          if (lastStationStatus === 'ACTIVE' && stationCardsRendered) return;
-
-          // Always poll — even during PENDING — as fallback when realtime fails/lags
+          // Always poll — even during PENDING/ACTIVE — to detect COMPLETED/disconnect status instantly
           const data = await fetch(`/api/stations?action=get&stationId=${currentStationId}`).then(r => r.json());
           if (!data.success) return;
 
