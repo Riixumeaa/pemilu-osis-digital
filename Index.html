@@ -2175,10 +2175,18 @@
           body: JSON.stringify({ sessionId: currentSessionId, stationId: currentStationId, candidateId: selectedCandidateId })
         }).then(r => r.json());
         closeModal('modal-vote-confirm');
-        if (data.success) { toast('Suara berhasil dicatat!', 'success'); updateVotingStationUI('VOTED'); }
-        else toast(data.message || 'Koneksi bermasalah. Suara belum dikonfirmasi.', 'error');
-      } catch (e) { closeModal('modal-vote-confirm'); toast('Koneksi bermasalah. Suara belum dikonfirmasi.', 'error'); }
-      finally { btn.disabled = false; btn.innerHTML = '✔️ Ya, Kirim Suara'; }
+        if (data.success) {
+          toast('Suara berhasil dicatat!', 'success');
+          setStationState('VOTED');
+        } else {
+          toast(data.message || 'Koneksi bermasalah. Suara belum dikonfirmasi.', 'error');
+        }
+      } catch (e) {
+        closeModal('modal-vote-confirm');
+        toast('Koneksi bermasalah. Suara belum dikonfirmasi.', 'error');
+      } finally {
+        btn.disabled = false; btn.innerHTML = '✔️ Ya, Kirim Suara';
+      }
     }
 
     // ── DASHBOARD ─────────────────────────────────────────────────────

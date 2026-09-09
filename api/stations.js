@@ -185,7 +185,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: 'Permintaan ditolak.' });
     }
 
-    // POST: disconnect — panitia disconnects a station (marks any session COMPLETED)
+    // POST: disconnect — panitia disconnects a station (marks any session COMPLETED & sets OFFLINE)
     if (action === 'disconnect') {
       await supabase.from('sessions')
         .update({ status: 'COMPLETED' })
@@ -193,6 +193,8 @@ export default async function handler(req, res) {
       await supabase.from('auth_requests')
         .update({ status: 'REJECTED', updated_at: new Date().toISOString() })
         .eq('station_id', stationId);
+      await supabase.from('settings')
+        .upsert({ key: `ping_${stationId}`, value: 'OFFLINE', updated_at: '1970-01-01T00:00:00Z' });
       return res.status(200).json({ success: true, message: `${stationId} telah di-disconnect.` });
     }
 
